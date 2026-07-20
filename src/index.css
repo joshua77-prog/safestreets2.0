@@ -2,47 +2,98 @@
 @tailwind components;
 @tailwind utilities;
 
-/* App theme tweaks to match the design */
 @layer base {
+  :root {
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.2);
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+    
+    --primary: 16 185 129; /* emerald-500 */
+    --primary-dark: 5 150 105; /* emerald-600 */
+    --secondary: 99 102 241; /* indigo-500 */
+    --accent: 236 72 153; /* pink-500 */
+  }
+
+  .dark {
+    --glass-bg: rgba(15, 23, 42, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  }
+
   html, body, #root {
     height: 100%;
+    @apply selection:bg-emerald-500/30;
   }
+
   body {
-    @apply bg-slate-50 text-slate-800 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased overflow-x-hidden;
+    font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
 @layer components {
-  .card {
-    @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
-  }
-  .card-header {
-    @apply px-6 py-4 border-b border-slate-100;
-  }
-  .card-title {
-    @apply text-slate-900 font-semibold;
-  }
-  .card-content {
-    @apply p-6;
+  .glass {
+    @apply backdrop-blur-xl bg-white/70 border border-white/20 shadow-xl;
   }
 
-  /* Badges / Chips */
-  .chip {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border;
+  .glass-dark {
+    @apply backdrop-blur-xl bg-slate-900/80 border border-white/10 shadow-2xl;
   }
-  .chip-green { @apply bg-green-100 text-green-800 border-green-200; }
-  .chip-emerald { @apply bg-emerald-100 text-emerald-800 border-emerald-200; }
-  .chip-yellow { @apply bg-yellow-100 text-yellow-800 border-yellow-200; }
-  .chip-blue { @apply bg-blue-100 text-blue-800 border-blue-200; }
-  .chip-red { @apply bg-red-100 text-red-800 border-red-200; }
-  .chip-slate { @apply bg-slate-100 text-slate-800 border-slate-200; }
+
+  .premium-card {
+    @apply rounded-[2.5rem] transition-all duration-500 hover:scale-[1.01] hover:shadow-2xl overflow-hidden relative border border-white/40;
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500;
+  }
+
+  .gradient-text-rose {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600;
+  }
+
+  .btn-premium {
+    @apply relative px-8 py-4 rounded-2xl font-black uppercase tracking-[0.15em] text-xs transition-all duration-300 active:scale-95 flex items-center justify-center gap-3 overflow-hidden;
+  }
+
+  .btn-primary {
+    @apply bg-slate-900 text-white shadow-2xl shadow-slate-900/20 hover:bg-slate-800 border-0;
+  }
+
+  .btn-secondary {
+    @apply glass border-white text-slate-900 hover:bg-white/80;
+  }
 }
 
 @layer utilities {
-  .text-gradient-emerald {
-    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+  }
+
+  .mesh-gradient {
+    background-color: #f8fafc;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.08) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, rgba(99, 102, 241, 0.08) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.08) 0, transparent 50%);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
   }
 }

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite ",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js"
@@ -13,17 +13,19 @@
     "date-fns": "^4.1.0",
     "express": "^5.1.0",
     "framer-motion": "^11.2.6",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.26.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.13",
     "@vitejs/plugin-react": "^4.7.0",
-    "autoprefixer": "^10.4.21",
+    "autoprefixer": "^10.4.23",
+    "baseline-browser-mapping": "^2.9.14",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.13",
-    "vite": "^5.4.20"
+    "tailwindcss": "^3.4.13",
+    "vite": "^7.3.1"
   }
 }

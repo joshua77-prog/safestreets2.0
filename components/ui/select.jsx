@@ -13,7 +13,7 @@ export function SelectValue() {
 }
 
 export function SelectContent({ children }) {
-	return <div className="mt-2 border rounded-md bg-white p-2">{children}</div>;
+	return <div className="mt-2 border rounded-md bg-white p-2" style={{ pointerEvents: 'auto', zIndex: 50 }}>{children}</div>;
 }
 
 export function SelectItem({ value, children, onClick }) {

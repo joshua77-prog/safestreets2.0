@@ -1,6 +1,4 @@
 import React from "react";
-import { Button } from "@/components/ui/button.jsx";
-import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { 
@@ -8,68 +6,89 @@ import {
   AlertTriangle, 
   Shield, 
   Users,
-  ArrowRight
+  ArrowUpRight,
+  Target,
+  BellRing,
+  Activity
 } from "lucide-react";
 import { motion } from "framer-motion";
 
 const actions = [
   {
-    title: "Plan Safe Route",
-    description: "Get the safest path to your destination",
+    title: "Safe Navigation",
+    description: "AI-optimized routes for your security",
     icon: Navigation,
-    color: "from-blue-500 to-blue-600",
+    color: "emerald",
     link: createPageUrl("SafeNavigation"),
+    badge: "Active"
   },
   {
-    title: "Send SOS Alert",
-    description: "Emergency alert to all contacts",
-    icon: AlertTriangle,
-    color: "from-red-500 to-red-600",
+    title: "SOS Protocol",
+    description: "Instant emergency beacon deployment",
+    icon: BellRing,
+    color: "rose",
     link: createPageUrl("Emergency"),
+    badge: "Critical"
   },
   {
-    title: "Report Safety Issue",
-    description: "Help keep the community safe",
+    title: "Intel Report",
+    description: "Contribute to community safety logs",
     icon: Shield,
-    color: "from-emerald-500 to-emerald-600",
+    color: "indigo",
     link: createPageUrl("SafetyReports"),
+    badge: "Public"
   },
   {
-    title: "Manage Contacts",
-    description: "Update emergency contacts",
+    title: "Profile Vault",
+    description: "Manage secure identity and contacts",
     icon: Users,
-    color: "from-purple-500 to-purple-600",
+    color: "amber",
     link: createPageUrl("Profile"),
+    badge: "Private"
   },
 ];
 
 export default function QuickActions() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       {actions.map((action, index) => (
         <motion.div
           key={action.title}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.1 }}
+          whileHover={{ y: -8 }}
         >
-          <Link to={action.link}>
-            <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${action.color} flex items-center justify-center shadow-lg`}>
-                    <action.icon className="w-6 h-6 text-white" />
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors duration-300" />
+          <Link to={action.link} className="block h-full">
+            <div className="premium-card glass p-8 h-full bg-white/40 border-white/50 shadow-lg hover:shadow-2xl hover:border-emerald-500/20 group">
+              <div className="flex items-start justify-between mb-8">
+                <div className={`w-14 h-14 bg-gradient-to-tr from-${action.color}-500 to-${action.color}-400 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-500`}>
+                  <action.icon className="w-7 h-7 text-white" />
                 </div>
-                <h3 className="font-semibold text-slate-900 mb-2 group-hover:text-slate-700 transition-colors duration-300">
-                  {action.title}
-                </h3>
-                <p className="text-sm text-slate-600 group-hover:text-slate-500 transition-colors duration-300">
-                  {action.description}
-                </p>
-              </CardContent>
-            </Card>
+                <div className="flex flex-col items-end gap-2">
+                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500">
+                     <ArrowUpRight className="w-4 h-4" />
+                   </div>
+                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{action.badge}</span>
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tight group-hover:text-emerald-700 transition-colors">
+                {action.title}
+              </h3>
+              <p className="text-sm text-slate-500 leading-relaxed font-medium">
+                {action.description}
+              </p>
+              
+              <div className="mt-6 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                 <motion.div 
+                   initial={{ width: 0 }}
+                   animate={{ width: "100%" }}
+                   transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
+                   className={`h-full bg-${action.color}-500 opacity-20`}
+                 />
+              </div>
+            </div>
           </Link>
         </motion.div>
       ))}

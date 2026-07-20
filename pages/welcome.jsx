@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { User } from "@/entities/all";
 import { Button } from "@/components/ui/button.jsx";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { 
@@ -10,10 +9,14 @@ import {
   Users, 
   Navigation,
   AlertTriangle,
-  CheckCircle,
   ArrowRight,
-  UserCheck,
-  Heart
+  Zap,
+  MapPin,
+  Fingerprint,
+  Activity,
+  Verified,
+  Cpu,
+  Radio
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -30,293 +33,220 @@ export default function Welcome() {
     try {
       const currentUser = await User.me();
       setUser(currentUser);
-      
-      // Check if this is a new user (no emergency contacts or profile data)
-      const isNew = !currentUser.emergency_contact_phone && 
-                   !currentUser.safety_preferences;
+      const isNew = !currentUser.emergency_contact_phone && !currentUser.safety_preferences;
       setIsNewUser(isNew);
-      
     } catch (error) {
       console.error("Error loading user:", error);
-      // If user is not authenticated, redirect to login
       await User.loginWithRedirect(window.location.origin + createPageUrl("Welcome"));
     } finally {
       setLoading(false);
     }
   };
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: { 
+      opacity: 1,
+      transition: { staggerChildren: 0.15 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600">Setting up your safety profile...</p>
+      <div className="min-h-[70vh] flex flex-col items-center justify-center">
+        <div className="relative">
+          <div className="w-24 h-24 border-4 border-emerald-500/10 border-t-emerald-500 rounded-full animate-spin"></div>
+          <Cpu className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 text-emerald-500 animate-pulse" />
         </div>
+        <p className="mt-8 text-slate-400 font-black uppercase tracking-[0.3em] text-[10px]">Initializing Tactical Link...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50">
-      <div className="max-w-4xl mx-auto p-6 py-12">
-        {/* Welcome Header */}
-        <motion.div 
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <div className="w-20 h-20 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl">
-            <Shield className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4">
-            Welcome to Safe Streets!
-          </h1>
-          <p className="text-xl text-slate-600 max-w-2xl mx-auto">
+    <div className="relative pt-10 pb-32">
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="max-w-6xl mx-auto px-6"
+      >
+        {/* Hero Section */}
+        <div className="text-center mb-24 relative">
+          <motion.div 
+            variants={itemVariants}
+            className="inline-flex items-center gap-3 px-6 py-2.5 rounded-2xl glass border-white/60 text-slate-900 text-[10px] font-black uppercase tracking-[0.25em] mb-12 shadow-2xl"
+          >
+            <Verified className="w-4 h-4 text-emerald-500" />
+            Strategic Urban Intelligence v4.0
+          </motion.div>
+          
+          <motion.h1 
+            variants={itemVariants}
+            className="text-6xl md:text-8xl font-black text-slate-900 mb-8 leading-[0.9] tracking-tighter"
+          >
+            Tactical <br />
+            <span className="gradient-text uppercase italic">Security Guardian</span>
+          </motion.h1>
+          
+          <motion.p 
+            variants={itemVariants}
+            className="text-2xl text-slate-500 max-w-3xl mx-auto leading-relaxed mb-12 font-medium"
+          >
             {isNewUser ? (
-              <>Hello {user?.full_name?.split(' ')[0] || 'there'}! Let's set up your personal safety guardian.</>
+              <>Authentication successful, <span className="text-slate-900 font-black italic">{user?.full_name?.split(' ')[0] || 'OP-01'}</span>. Begin tactical synchronization to authorize personal protection protocols.</>
             ) : (
-              <>Welcome back, {user?.full_name?.split(' ')[0] || 'there'}! Your safety guardian is ready.</>
+              <>Welcome back, <span className="text-slate-900 font-black italic">{user?.full_name?.split(' ')[0] || 'COMMANDER'}</span>. Your strategic security grid is active and processing real-time sector data.</>
             )}
-          </p>
-        </motion.div>
+          </motion.p>
+
+          {!isNewUser && (
+            <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-center gap-6">
+              <Link to={createPageUrl("Dashboard")}>
+                <Button className="btn-premium btn-primary py-7 px-10 text-lg shadow-[0_20px_50px_rgba(16,185,129,0.3)] h-auto">
+                   Enter Command Center
+                  <ArrowRight className="w-6 h-6" />
+                </Button>
+              </Link>
+              <Link to={createPageUrl("SafeNavigation")}>
+                <Button className="btn-premium glass-dark text-white border-0 py-7 px-10 text-lg h-auto hover:bg-slate-800">
+                  Sector Navigation
+                  <Navigation className="w-5 h-5 ml-3" />
+                </Button>
+              </Link>
+            </motion.div>
+          )}
+        </div>
 
         {isNewUser ? (
-          /* New User Onboarding */
-          <div className="space-y-8">
-            {/* Setup Steps */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <h2 className="text-2xl font-bold text-slate-900 text-center mb-8">
-                Let's get you protected in 3 simple steps
-              </h2>
-              
-              <div className="grid md:grid-cols-3 gap-6">
-                {/* Step 1 */}
-                <Card className="relative overflow-hidden border-0 shadow-xl bg-gradient-to-br from-blue-50 to-blue-100">
-                  <div className="absolute top-4 right-4">
-                    <Badge className="bg-blue-500 text-white">Step 1</Badge>
-                  </div>
-                  <CardContent className="p-8">
-                    <div className="w-16 h-16 bg-blue-500 rounded-xl flex items-center justify-center mb-6">
-                      <Users className="w-8 h-8 text-white" />
+          <div className="grid lg:grid-cols-3 gap-10 mb-24">
+            {[
+              {
+                step: 1,
+                title: "Guardian Nodes",
+                desc: "Authorize your strategic contact list for immediate cross-protocol emergency notifications.",
+                icon: Users,
+                color: "emerald",
+                href: createPageUrl("Emergency"),
+                btn: "Configure Network"
+              },
+              {
+                step: 2,
+                title: "Identity Core",
+                desc: "Encrypt your medical signatures and safety heuristics to refine the AI response matrix.",
+                icon: Fingerprint,
+                color: "blue",
+                href: createPageUrl("Profile"),
+                btn: "Authorize Profile"
+              },
+              {
+                step: 3,
+                title: "Neural Routing",
+                desc: "Access proprietary pathfinding algorithms optimized for maximum sector security.",
+                icon: MapPin,
+                color: "indigo",
+                href: createPageUrl("SafeNavigation"),
+                btn: "Deploy Navigation"
+              }
+            ].map((step, i) => (
+              <motion.div key={step.step} variants={itemVariants}>
+                <Card className="premium-card h-full glass overflow-hidden border-white/80 group">
+                  <div className={`absolute top-0 right-0 w-48 h-48 bg-${step.color}-500 blur-[100px] rounded-full -mr-24 -mt-24 opacity-10 group-hover:opacity-20 transition-opacity`}></div>
+                  <CardContent className="p-12 flex flex-col h-full relative z-10">
+                    <div className="flex items-center justify-between mb-10">
+                      <div className={`w-16 h-16 bg-slate-900 rounded-[1.5rem] flex items-center justify-center shadow-2xl`}>
+                        <step.icon className="w-8 h-8 text-white" />
+                      </div>
+                      <span className="text-5xl font-black text-slate-100 italic transition-colors group-hover:text-slate-200">0{step.step}</span>
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-3">
-                      Add Emergency Contacts
-                    </h3>
-                    <p className="text-slate-600 mb-6">
-                      Add trusted contacts who will be notified instantly in case of emergency.
-                    </p>
-                    <Link to={createPageUrl("Emergency")}>
-                      <Button className="w-full bg-blue-600 hover:bg-blue-700">
-                        Add Contacts
-                        <ArrowRight className="w-4 h-4 ml-2" />
+                    <h3 className="text-2xl font-black mb-4 tracking-tight text-slate-900 uppercase">{step.title}</h3>
+                    <p className="text-slate-500 mb-10 leading-relaxed flex-grow font-medium">{step.desc}</p>
+                    <Link to={step.href}>
+                      <Button className={`w-full btn-premium btn-primary py-5 h-auto shadow-xl`}>
+                        {step.btn}
+                        <ArrowRight className="w-5 h-5" />
                       </Button>
                     </Link>
                   </CardContent>
                 </Card>
-
-                {/* Step 2 */}
-                <Card className="relative overflow-hidden border-0 shadow-xl bg-gradient-to-br from-emerald-50 to-emerald-100">
-                  <div className="absolute top-4 right-4">
-                    <Badge className="bg-emerald-500 text-white">Step 2</Badge>
-                  </div>
-                  <CardContent className="p-8">
-                    <div className="w-16 h-16 bg-emerald-500 rounded-xl flex items-center justify-center mb-6">
-                      <UserCheck className="w-8 h-8 text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-3">
-                      Complete Your Profile
-                    </h3>
-                    <p className="text-slate-600 mb-6">
-                      Add medical info and safety preferences for better protection.
-                    </p>
-                    <Link to={createPageUrl("Profile")}>
-                      <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
-                        Setup Profile
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-
-                {/* Step 3 */}
-                <Card className="relative overflow-hidden border-0 shadow-xl bg-gradient-to-br from-purple-50 to-purple-100">
-                  <div className="absolute top-4 right-4">
-                    <Badge className="bg-purple-500 text-white">Step 3</Badge>
-                  </div>
-                  <CardContent className="p-8">
-                    <div className="w-16 h-16 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
-                      <Navigation className="w-8 h-8 text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-3">
-                      Plan Your First Route
-                    </h3>
-                    <p className="text-slate-600 mb-6">
-                      Try our safe navigation to see the difference it makes.
-                    </p>
-                    <Link to={createPageUrl("SafeNavigation")}>
-                      <Button className="w-full bg-purple-600 hover:bg-purple-700">
-                        Try Navigation
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              </div>
-            </motion.div>
-
-            {/* Features Overview */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Card className="shadow-xl border-0 bg-gradient-to-r from-slate-900 to-slate-800 text-white">
-                <CardContent className="p-8">
-                  <h3 className="text-2xl font-bold mb-6 text-center">
-                    Your Complete Safety Ecosystem
-                  </h3>
-                  <div className="grid md:grid-cols-4 gap-6">
-                    <div className="text-center">
-                      <Shield className="w-8 h-8 mx-auto mb-3 text-emerald-400" />
-                      <h4 className="font-semibold mb-2">Smart Routes</h4>
-                      <p className="text-sm text-slate-300">AI-powered safe navigation</p>
-                    </div>
-                    <div className="text-center">
-                      <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-red-400" />
-                      <h4 className="font-semibold mb-2">SOS Alerts</h4>
-                      <p className="text-sm text-slate-300">Instant emergency notifications</p>
-                    </div>
-                    <div className="text-center">
-                      <Users className="w-8 h-8 mx-auto mb-3 text-blue-400" />
-                      <h4 className="font-semibold mb-2">Community</h4>
-                      <p className="text-sm text-slate-300">Crowd-sourced safety data</p>
-                    </div>
-                    <div className="text-center">
-                      <Heart className="w-8 h-8 mx-auto mb-3 text-pink-400" />
-                      <h4 className="font-semibold mb-2">Voice AI</h4>
-                      <p className="text-sm text-slate-300">Hands-free panic detection</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+              </motion.div>
+            ))}
           </div>
         ) : (
-          /* Returning User Dashboard */
-          <div className="space-y-8">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="grid md:grid-cols-2 lg:grid-cols-4 gap-6"
-            >
-              <Link to={createPageUrl("Dashboard")}>
-                <Card className="hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-blue-50 to-blue-100 group">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <Shield className="w-8 h-8 text-blue-600" />
-                      <ArrowRight className="w-4 h-4 text-blue-400 group-hover:text-blue-600 transition-colors" />
-                    </div>
-                    <h3 className="font-bold text-slate-900 mb-2">Dashboard</h3>
-                    <p className="text-sm text-slate-600">View your safety overview</p>
-                  </CardContent>
-                </Card>
-              </Link>
-
-              <Link to={createPageUrl("SafeNavigation")}>
-                <Card className="hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-emerald-50 to-emerald-100 group">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <Navigation className="w-8 h-8 text-emerald-600" />
-                      <ArrowRight className="w-4 h-4 text-emerald-400 group-hover:text-emerald-600 transition-colors" />
-                    </div>
-                    <h3 className="font-bold text-slate-900 mb-2">Safe Routes</h3>
-                    <p className="text-sm text-slate-600">Plan your safest path</p>
-                  </CardContent>
-                </Card>
-              </Link>
-
-              <Link to={createPageUrl("Emergency")}>
-                <Card className="hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-red-50 to-red-100 group">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <AlertTriangle className="w-8 h-8 text-red-600" />
-                      <ArrowRight className="w-4 h-4 text-red-400 group-hover:text-red-600 transition-colors" />
-                    </div>
-                    <h3 className="font-bold text-slate-900 mb-2">Emergency</h3>
-                    <p className="text-sm text-slate-600">SOS & emergency contacts</p>
-                  </CardContent>
-                </Card>
-              </Link>
-
-              <Link to={createPageUrl("SafetyReports")}>
-                <Card className="hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-purple-50 to-purple-100 group">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <Users className="w-8 h-8 text-purple-600" />
-                      <ArrowRight className="w-4 h-4 text-purple-400 group-hover:text-purple-600 transition-colors" />
-                    </div>
-                    <h3 className="font-bold text-slate-900 mb-2">Community</h3>
-                    <p className="text-sm text-slate-600">Safety reports & insights</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="text-center"
-            >
-              <Card className="shadow-xl border-0 bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
-                <CardContent className="p-8">
-                  <CheckCircle className="w-12 h-12 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold mb-2">You're All Set!</h3>
-                  <p className="text-emerald-100 mb-6">
-                    Your safety guardian is active and ready to protect you wherever you go.
-                  </p>
-                  <Link to={createPageUrl("Dashboard")}>
-                    <Button variant="secondary" className="bg-white text-emerald-600 hover:bg-gray-100">
-                      Go to Dashboard
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </Link>
-                </CardContent>
-              </Card>
-            </motion.div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-24">
+             {[
+               { title: "Command", desc: "Security overview", icon: Shield, path: "Dashboard" },
+               { title: "Tactical", desc: "Safe route mapping", icon: Navigation, path: "SafeNavigation" },
+               { title: "Distress", desc: "Emergency protocols", icon: AlertTriangle, path: "Emergency" },
+               { title: "Intelligence", desc: "Crowdsourced logs", icon: Activity, path: "SafetyReports" }
+             ].map((feature, i) => (
+               <motion.div key={feature.title} variants={itemVariants}>
+                 <Link to={createPageUrl(feature.path)}>
+                   <div className="premium-card glass p-8 h-full group hover:border-emerald-500/50 transition-all duration-500 shadow-xl">
+                     <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-emerald-500 transition-all duration-500">
+                        <feature.icon className="w-7 h-7 text-white" />
+                     </div>
+                     <h3 className="text-xl font-black text-slate-900 mb-1 uppercase tracking-tight">{feature.title}</h3>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{feature.desc}</p>
+                     
+                     <div className="mt-6 flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] transform translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all">
+                        Link Established <ArrowRight className="w-3 h-3" />
+                     </div>
+                   </div>
+                 </Link>
+               </motion.div>
+             ))}
           </div>
         )}
 
-        {/* Safety Tip */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="mt-12"
-        >
-          <Card className="border-2 border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Heart className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-yellow-800 mb-2">Safety Tip</h4>
-                  <p className="text-yellow-700">
-                    Always let someone know your planned route and expected arrival time. 
-                    Safe Streets can automatically send arrival confirmations to your emergency contacts.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Dynamic Metric Grid */}
+        <motion.div variants={itemVariants} className="mb-24">
+           <div className="glass rounded-[4rem] p-16 border-white/60 shadow-[0_50px_100px_rgba(0,0,0,0.05)] relative overflow-hidden bg-white/40">
+             <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 blur-[120px] rounded-full -mr-48 -mt-48"></div>
+             <div className="grid md:grid-cols-3 gap-20 text-center relative z-10">
+               <div className="space-y-2">
+                  <div className="text-6xl font-black text-slate-900">99<span className="text-emerald-500">.</span>9</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Grid Reliability Index</div>
+               </div>
+               <div className="space-y-2 border-slate-100 md:border-x px-10">
+                  <div className="text-6xl font-black text-slate-900">1<span className="text-emerald-500">.</span>2s</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Neural Alert Latency</div>
+               </div>
+               <div className="space-y-2">
+                  <div className="text-6xl font-black text-slate-900">84k</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Secure Transits Logged</div>
+               </div>
+             </div>
+           </div>
         </motion.div>
-      </div>
+
+        {/* Tactical Strategy Section */}
+        <motion.div variants={itemVariants} className="max-w-5xl mx-auto">
+           <div className="glass-dark rounded-[3rem] p-12 flex flex-col md:flex-row items-center gap-12 border-0 shadow-2xl relative overflow-hidden">
+             <div className="absolute inset-0 opacity-10">
+               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(circle,rgba(16,185,129,0.3)_0%,transparent_70%)]"></div>
+             </div>
+             
+             <div className="w-28 h-28 bg-emerald-500 rounded-[2.5rem] flex items-center justify-center shadow-[0_20px_40px_rgba(16,185,129,0.4)] flex-shrink-0 animate-pulse relative z-10">
+                <Radio className="w-14 h-14 text-white" />
+             </div>
+             <div className="text-center md:text-left relative z-10">
+                <div className="flex items-center justify-center md:justify-start gap-2 text-emerald-400 font-bold uppercase tracking-[0.2em] text-[10px] mb-4">
+                   <Zap className="w-3 h-3 fill-emerald-400" />
+                   Active Directive
+                </div>
+                <p className="text-2xl md:text-3xl text-white font-medium leading-tight italic tracking-tight">
+                  "True security is the synthesis of <span className="text-emerald-400">predictive intelligence</span> and absolute vigilance. Deploying Safest route now."
+                </p>
+             </div>
+           </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

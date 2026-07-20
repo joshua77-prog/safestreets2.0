@@ -40,7 +40,9 @@ export default function SafetyMap({ reports }) {
       <Card className="shadow-lg border-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Navigation className="w-5 h-5 text-blue-500" />
+            <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-500">
+              <Navigation className="w-5 h-5 text-white" />
+            </div>
             Safety Map
           </CardTitle>
         </CardHeader>

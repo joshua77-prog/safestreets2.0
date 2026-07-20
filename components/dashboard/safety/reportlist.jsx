@@ -1,7 +1,4 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card.jsx";
-import { Badge } from "../../../components/ui/badge.jsx";
-import { Button } from "../../../components/ui/button.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select.jsx";
 import { Skeleton } from "../../../components/ui/skeleton.jsx";
 import { format } from "date-fns";
@@ -13,31 +10,29 @@ import {
   AlertTriangle,
   Shield,
   User,
-  Eye
+  Eye,
+  ArrowRight,
+  Zap,
+  Activity,
+  Verified
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const getReportTypeColor = (reportType) => {
+const getReportTypeStyles = (reportType) => {
   switch (reportType) {
     case 'incident':
     case 'suspicious_activity':
-      return 'bg-red-100 text-red-800 border-red-200';
+      return 'bg-rose-500/10 text-rose-600 border-rose-200/50';
     case 'poor_lighting':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      return 'bg-amber-500/10 text-amber-600 border-amber-200/50';
     case 'safe_zone':
     case 'well_lit':
     case 'police_presence':
     case 'busy_area':
-      return 'bg-green-100 text-green-800 border-green-200';
+      return 'bg-emerald-500/10 text-emerald-600 border-emerald-200/50';
     default:
-      return 'bg-blue-100 text-blue-800 border-blue-200';
+      return 'bg-blue-500/10 text-blue-600 border-blue-200/50';
   }
-};
-
-const getSafetyRatingColor = (rating) => {
-  if (rating >= 4) return 'text-green-600';
-  if (rating >= 3) return 'text-yellow-600';
-  return 'text-red-600';
 };
 
 const getReportIcon = (reportType) => {
@@ -59,146 +54,144 @@ const getReportIcon = (reportType) => {
 export default function ReportsList({ reports, loading, filterType, onFilterChange }) {
   if (loading) {
     return (
-      <div className="space-y-4">
-        {Array(5).fill(0).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="p-6">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-4 w-1/3" />
-                  <Skeleton className="h-6 w-20" />
+      <div className="space-y-6">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="premium-card glass p-8 border-white/60">
+             <div className="flex gap-6">
+                <Skeleton className="w-12 h-12 rounded-xl bg-slate-200/50" />
+                <div className="flex-grow space-y-4">
+                   <div className="flex justify-between">
+                      <Skeleton className="h-6 w-1/3 bg-slate-200/50" />
+                      <Skeleton className="h-6 w-24 bg-slate-200/50" />
+                   </div>
+                   <Skeleton className="h-4 w-full bg-slate-200/50" />
+                   <Skeleton className="h-4 w-2/3 bg-slate-200/50" />
                 </div>
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-2/3" />
-                <div className="flex gap-2">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-6 w-20" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+             </div>
+          </div>
         ))}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filter Controls */}
-      <Card className="shadow-lg border-0">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-500" />
-              <span className="text-sm font-medium">Filter Reports</span>
-            </div>
-            <Select value={filterType} onValueChange={onFilterChange}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Reports" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Reports</SelectItem>
-                <SelectItem value="incident">Safety Incidents</SelectItem>
-                <SelectItem value="safe_zone">Safe Zones</SelectItem>
-                <SelectItem value="poor_lighting">Poor Lighting</SelectItem>
-                <SelectItem value="suspicious_activity">Suspicious Activity</SelectItem>
-                <SelectItem value="police_presence">Police Presence</SelectItem>
-                <SelectItem value="well_lit">Well Lit Areas</SelectItem>
-                <SelectItem value="busy_area">Busy Areas</SelectItem>
-              </SelectContent>
-            </Select>
+    <div className="space-y-8">
+      {/* Filter Header */}
+      <div className="flex items-center justify-between glass px-6 py-4 rounded-2xl border-white/60">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white">
+            <Filter className="w-4 h-4" />
           </div>
-        </CardContent>
-      </Card>
+          <span className="text-sm font-black text-slate-900 uppercase tracking-widest">Protocol Filter</span>
+        </div>
+        <Select value={filterType} onValueChange={onFilterChange}>
+          <SelectTrigger className="w-64 glass border-white/80 focus:ring-slate-900 rounded-xl font-bold text-slate-900">
+            <SelectValue placeholder="All intelligence" />
+          </SelectTrigger>
+          <SelectContent className="glass border-white/80 rounded-xl overflow-hidden">
+            <SelectItem value="all">Comprehensive Feed</SelectItem>
+            <SelectItem value="incident">Critical Incidents</SelectItem>
+            <SelectItem value="safe_zone">Guarded Zones</SelectItem>
+            <SelectItem value="poor_lighting">Luminosity Alerts</SelectItem>
+            <SelectItem value="suspicious_activity">Anomalous Activity</SelectItem>
+            <SelectItem value="police_presence">Force Presence</SelectItem>
+            <SelectItem value="well_lit">Photon Optimized</SelectItem>
+            <SelectItem value="busy_area">High Traffic</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
-      {/* Reports List */}
+      {/* Reports Feed */}
       {reports.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Shield className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-slate-600 mb-2">No Safety Reports</h3>
-            <p className="text-slate-500">
-              {filterType === "all" 
-                ? "No safety reports have been submitted yet." 
-                : `No ${filterType.replace(/_/g, ' ')} reports found.`}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="py-20 text-center glass rounded-[2.5rem] border-white/60 border-dashed border-2">
+          <Activity className="w-16 h-16 text-slate-200 mx-auto mb-6" />
+          <h3 className="text-xl font-black text-slate-900 mb-2 italic">Zero Field reports</h3>
+          <p className="text-slate-500 font-medium">
+            {filterType === "all" 
+              ? "All sectors currently reporting stable conditions." 
+              : `No activity detected in the ${filterType.replace(/_/g, ' ')} grid.`}
+          </p>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {reports.map((report, index) => {
             const ReportIcon = getReportIcon(report.report_type);
+            const isCritical = report.report_type === 'incident' || report.report_type === 'suspicious_activity';
             
             return (
               <motion.div
                 key={report.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
+                transition={{ delay: index * 0.05 }}
               >
-                <Card className="hover:shadow-lg transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <ReportIcon className={`w-5 h-5 ${
-                            report.report_type === 'incident' || report.report_type === 'suspicious_activity' || report.report_type === 'poor_lighting'
-                              ? 'text-red-500'
-                              : 'text-emerald-500'
-                          }`} />
+                <div className="premium-card glass p-8 border-white/60 hover:border-emerald-500/30 transition-all duration-500 group relative overflow-hidden">
+                  <div className={`absolute top-0 right-0 w-32 h-32 blur-[100px] rounded-full -mr-16 -mt-16 opacity-10 ${isCritical ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+                  
+                  <div className="flex flex-col md:flex-row gap-8 relative z-10">
+                    <div className={`w-14 h-14 shrink-0 rounded-[1.25rem] flex items-center justify-center shadow-2xl transition-transform group-hover:scale-110 ${
+                      isCritical ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
+                    }`}>
+                      <ReportIcon className="w-7 h-7" />
+                    </div>
+
+                    <div className="flex-grow">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                        <div>
+                           <div className="flex items-center gap-2 mb-1.5">
+                              <MapPin className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+                              <h3 className="text-xl font-black text-slate-900 tracking-tight">{report.location}</h3>
+                           </div>
+                           <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em]">
+                              <div className="flex items-center gap-1.5">
+                                 <Clock className="w-3.5 h-3.5" />
+                                 {format(new Date(report.created_date), 'MMM d, yyyy • h:mm a')}
+                              </div>
+                              <div className="flex items-center gap-1.5 border-l border-slate-200 pl-4">
+                                 <Eye className="w-3.5 h-3.5" />
+                                 {report.time_of_day}
+                              </div>
+                           </div>
                         </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <MapPin className="w-4 h-4 text-slate-400" />
-                            <h3 className="font-semibold text-slate-900">{report.location}</h3>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-slate-600 mb-3">
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              <span>{format(new Date(report.created_date), 'MMM d, yyyy h:mm a')}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Eye className="w-3 h-3" />
-                              <span className="capitalize">{report.time_of_day}</span>
-                            </div>
-                          </div>
-                          {report.description && (
-                            <p className="text-slate-700 text-sm mb-3">
-                              {report.description}
-                            </p>
-                          )}
+
+                        <div className="flex items-center gap-3">
+                           <div className="flex items-center gap-1 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                             <Star className={`w-4 h-4 fill-amber-400 text-amber-400`} />
+                             <span className="text-sm font-black text-slate-900">
+                               {report.safety_rating}.0
+                             </span>
+                           </div>
                         </div>
                       </div>
-                      
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-1">
-                          <Star className={`w-4 h-4 fill-current ${getSafetyRatingColor(report.safety_rating)}`} />
-                          <span className={`text-sm font-medium ${getSafetyRatingColor(report.safety_rating)}`}>
-                            {report.safety_rating}/5
-                          </span>
+
+                      {report.description && (
+                        <p className="text-slate-600 text-sm mb-6 leading-relaxed font-medium italic border-l-2 border-slate-100 pl-4">
+                          "{report.description}"
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-100/50">
+                        <div className="flex items-center gap-2">
+                           <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-[0.15em] border ${getReportTypeStyles(report.report_type)}`}>
+                             {report.report_type.replace(/_/g, ' ')}
+                           </span>
+                           {report.verified && (
+                             <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-[0.15em] bg-blue-500 text-white shadow-lg shadow-blue-500/20">
+                               <Verified className="w-3 h-3" />
+                               Authenticated
+                             </div>
+                           )}
+                        </div>
+                        
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-4">
+                           <User className="w-3.5 h-3.5" />
+                           Sector Sentinel
+                           <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                         </div>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-2">
-                        <Badge className={getReportTypeColor(report.report_type)}>
-                          {report.report_type.replace(/_/g, ' ')}
-                        </Badge>
-                        {report.verified && (
-                          <Badge className="bg-blue-100 text-blue-800 border-blue-200">
-                            ✓ Verified
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        <User className="w-3 h-3" />
-                        <span>Community Report</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </motion.div>
             );
           })}

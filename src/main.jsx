@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import './index.css';
+import 'leaflet/dist/leaflet.css';
 
 import Layout from '../layout.jsx';
 import Welcome from '../pages/welcome.jsx';
@@ -11,6 +12,7 @@ import Emergency from '../pages/emergency.jsx';
 import SafetyReports from '../pages/safereports.jsx';
 import Profile from '../pages/profile.jsx';
 import Onboarding from '../pages/onboarding.jsx';
+import UIShowcase from '../pages/ui.jsx';
 
 const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/welcome" replace /> },
@@ -67,6 +69,14 @@ const router = createBrowserRouter([
     element: (
       <Layout currentPageName="Onboarding">
         <Onboarding />
+      </Layout>
+    ),
+  },
+  {
+    path: '/ui',
+    element: (
+      <Layout currentPageName="UI">
+        <UIShowcase />
       </Layout>
     ),
   },
