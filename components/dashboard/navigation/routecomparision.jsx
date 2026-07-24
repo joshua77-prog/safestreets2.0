@@ -49,10 +49,10 @@ export default function RouteComparison({ routes, selectedRoute, onRouteSelect }
               </div>
               <div>
                 <h3 className={`text-lg font-black tracking-tight ${isSafest ? 'text-emerald-700' : 'text-slate-900'}`}>
-                  {isSafest ? 'Guarded Path' : 'Direct Path'}
+                  {isSafest ? 'Safe Route' : 'Fast Route'}
                 </h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  {isSafest ? 'Stability Protocol' : 'Velocity Protocol'}
+                  {isSafest ? 'Safest Path' : 'Fastest Path'}
                 </p>
               </div>
             </div>
@@ -145,4 +145,4 @@ export default function RouteComparison({ routes, selectedRoute, onRouteSelect }
       </div>
     </div>
   );
-}
+}

@@ -28,9 +28,41 @@ export default function Emergency() {
   const [activeAlert, setActiveAlert] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [countdownActive, setCountdownActive] = useState(false);
+  const [countdownSeconds, setCountdownSeconds] = useState(45);
+  const [workflowMessage, setWorkflowMessage] = useState("");
+  const [workflowStatus, setWorkflowStatus] = useState("Standby");
+  const [lastKnownLocation, setLastKnownLocation] = useState(null);
 
   useEffect(() => {
     loadEmergencyData();
+  }, []);
+
+  useEffect(() => {
+    if (!countdownActive) return undefined;
+
+    const timer = window.setInterval(() => {
+      setCountdownSeconds((previous) => {
+        if (previous <= 1) {
+          window.clearInterval(timer);
+          void finalizeEmergencyWorkflow();
+          return 0;
+        }
+
+        return previous - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [countdownActive]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      void flushOfflineQueue();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
   }, []);
 
   const loadEmergencyData = async () => {
@@ -51,10 +83,45 @@ export default function Emergency() {
     }
   };
 
-  const handleSOSAlert = async (alertType = 'manual_sos', message = '') => {
+  const persistOfflineLocation = (location) => {
+    if (typeof window === "undefined") return;
+
+    const stored = JSON.parse(window.localStorage.getItem("pendingEmergencyLocations") || "[]");
+    const payload = {
+      ...location,
+      stagedAt: new Date().toISOString(),
+    };
+    stored.push(payload);
+    window.localStorage.setItem("pendingEmergencyLocations", JSON.stringify(stored));
+    setLastKnownLocation(location);
+  };
+
+  const flushOfflineQueue = async () => {
+    if (typeof window === "undefined" || !window.navigator.onLine) return;
+
+    const stored = JSON.parse(window.localStorage.getItem("pendingEmergencyLocations") || "[]");
+    if (!stored.length) return;
+
+    window.localStorage.removeItem("pendingEmergencyLocations");
+    setWorkflowMessage("Buffered location data is being resent now.");
+  };
+
+  const finalizeEmergencyWorkflow = async (alertType = 'manual_sos', message = '', source = 'SOS') => {
+    setCountdownActive(false);
+    setWorkflowStatus("Dispatching support");
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setWorkflowMessage("Location services unavailable. Offline cache will retain the last known coordinates.");
+      return;
+    }
+
     try {
       const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 10000,
+        });
       });
 
       const alertData = {
@@ -62,23 +129,49 @@ export default function Emergency() {
         location: "Current Location",
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
-        message: message,
-        contacts_notified: contacts.map(c => c.id)
+        message: `${message || "Emergency assistance needed"} [${source}]`,
+        contacts_notified: contacts.map((contact) => contact.id),
       };
 
       const alert = await SOSAlert.create(alertData);
       setActiveAlert(alert);
-      
+      setLastKnownLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      setWorkflowMessage("Live location sharing and dispatch guidance are active.");
+      if (navigator.vibrate) navigator.vibrate([200, 100, 300]);
     } catch (error) {
       console.error("Error sending SOS alert:", error);
+      const fallbackLocation = lastKnownLocation || { latitude: 0, longitude: 0 };
+      persistOfflineLocation(fallbackLocation);
+      setWorkflowMessage("Offline mode active. The last known GPS position will be shared when connectivity is restored.");
       const alert = await SOSAlert.create({
         alert_type: alertType,
         location: "Location unavailable",
-        message: message,
-        contacts_notified: contacts.map(c => c.id)
+        message: `${message || "Emergency assistance needed"} [${source}]`,
+        contacts_notified: contacts.map((contact) => contact.id),
       });
       setActiveAlert(alert);
     }
+  };
+
+  const startEmergencyWorkflow = (alertType = 'manual_sos', message = '', source = 'SOS') => {
+    setCountdownActive(true);
+    setCountdownSeconds(45);
+    setWorkflowStatus("Countdown active");
+    setWorkflowMessage(`${source} trigger received. Emergency protocol will activate in 45 seconds.`);
+  };
+
+  const cancelEmergencyWorkflow = () => {
+    setCountdownActive(false);
+    setWorkflowStatus("Cancelled");
+    setWorkflowMessage("Emergency protocol cancelled. Safe status restored.");
+  };
+
+  const handleSOSAlert = async (alertType = 'manual_sos', message = '') => {
+    startEmergencyWorkflow(alertType, message, "SOS");
+  };
+
+  const triggerSensorWorkflow = (source, message) => {
+    startEmergencyWorkflow("sensor_sos", message, source);
   };
 
   const resolveAlert = async () => {
@@ -152,10 +245,38 @@ export default function Emergency() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {countdownActive && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="premium-card border-amber-200 bg-amber-50/80 p-6 shadow-lg"
+          >
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.25em] text-amber-700">Emergency countdown</div>
+                <div className="text-lg font-semibold text-slate-900">{workflowMessage}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-white px-4 py-2 text-amber-700 font-black text-lg">{countdownSeconds}s</div>
+                <Button onClick={cancelEmergencyWorkflow} className="bg-slate-900 text-white">Cancel</Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="grid lg:grid-cols-12 gap-10">
         {/* SOS Action Center */}
-        <div className="lg:col-span-12">
+        <div className="lg:col-span-12 space-y-4">
             <SOSButton onSOSAlert={handleSOSAlert} disabled={!!activeAlert} />
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => triggerSensorWorkflow('Wearable', 'Wearable SOS trigger received')} className="bg-emerald-600 text-white">Wearable SOS</Button>
+              <Button onClick={() => triggerSensorWorkflow('Pressure Sensor', 'Pressure sensor trigger received')} className="bg-slate-900 text-white">Pressure Sensor</Button>
+              <Button onClick={() => triggerSensorWorkflow('Motion Sensor', 'Motion sensor trigger received')} className="bg-rose-600 text-white">Motion Sensor</Button>
+              <Button onClick={() => triggerSensorWorkflow('Accelerometer', 'Accelerometer trigger received')} className="bg-amber-600 text-white">Accelerometer</Button>
+            </div>
         </div>
 
         {/* Tactical Controls */}
@@ -205,6 +326,16 @@ export default function Emergency() {
                    <span className="text-emerald-400 italic"> Tactical Guardian units</span> are briefed on your real-time vector.
                  </p>
                  
+                 <div className="rounded-2xl border border-white/10 bg-white/10 p-4 text-sm text-slate-300">
+                   <div className="font-semibold text-white">Protocol status</div>
+                   <div>{workflowStatus}</div>
+                   {lastKnownLocation && (
+                     <div className="mt-2 text-xs text-slate-400">
+                       Last known GPS: {lastKnownLocation.latitude.toFixed(4)}, {lastKnownLocation.longitude.toFixed(4)}
+                     </div>
+                   )}
+                 </div>
+                 
                  <Button className="w-full btn-premium bg-white/10 text-white hover:bg-white/20 border-white/20">
                     Access Local Dispatch
                     <Phone className="w-4 h-4 ml-2" />
@@ -228,6 +359,5 @@ export default function Emergency() {
   );
 }
 
- 
 
 

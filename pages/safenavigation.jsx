@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { 
@@ -20,6 +20,8 @@ import MapView from "../components/map/MapView.jsx";
 import RouteLayer from "../components/map/RouteLayer.jsx";
 import SearchBox from "../components/map/SearchBox.jsx";
 import { getFastestRoute, getSafestRoute } from "../services/routing";
+import { getCommunityReports, getSafetyData } from "../services/supabaseService";
+import { monitorRouteDeviation } from "../services/routeDeviationService";
 
 export default function SafeNavigation() {
   const [origin, setOrigin] = useState({ label: "", coords: null });
@@ -27,34 +29,70 @@ export default function SafeNavigation() {
   const [routes, setRoutes] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState("safest");
+  const [safetyData, setSafetyData] = useState([]);
+  const [communityReports, setCommunityReports] = useState([]);
+  const [safetyLoading, setSafetyLoading] = useState(true);
+  const [safetyError, setSafetyError] = useState("");
+  const [deviationAlert, setDeviationAlert] = useState("");
+
+  useEffect(() => {
+    void loadSafetyContext();
+  }, []);
+
+  useEffect(() => {
+    if (!origin.coords || !destination.coords || !routes?.selectedRoute) return;
+
+    const watchId = navigator.geolocation?.watchPosition(
+      (position) => {
+        const alert = monitorRouteDeviation([position.coords.latitude, position.coords.longitude], routes?.safest ?? routes?.fastest);
+        if (alert?.warning) {
+          setDeviationAlert(alert.message);
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+    );
+
+    return () => navigator.geolocation?.clearWatch(watchId);
+  }, [origin.coords, destination.coords, routes]);
+
+  const loadSafetyContext = async () => {
+    setSafetyLoading(true);
+    setSafetyError("");
+
+    try {
+      const [records, reports] = await Promise.all([getSafetyData(), getCommunityReports()]);
+      setSafetyData(records);
+      setCommunityReports(reports);
+    } catch (error) {
+      console.error("Failed to load safety context:", error);
+      setSafetyError("Unable to load safety data from the live analysis feed.");
+    } finally {
+      setSafetyLoading(false);
+    }
+  };
 
   const handleRouteCalculation = async () => {
     if (!origin.coords || !destination.coords) return;
     setLoading(true);
+
     try {
-      const [fastestPath, safestPath] = await Promise.all([
-        getFastestRoute(origin, destination),
-        getSafestRoute(origin, destination),
+      const safetyContext = {
+        safetyData,
+        communityReports,
+      };
+
+      const [fastestRoute, safestRoute] = await Promise.all([
+        getFastestRoute(origin, destination, safetyContext),
+        getSafestRoute(origin, destination, safetyContext),
       ]);
 
       setRoutes({
-        fastest: {
-          duration: "12 mins",
-          distance: "2.1 km",
-          safetyScore: 65,
-          warnings: ["Poorly lit area", "High crime zone"],
-          path: fastestPath,
-        },
-        safest: {
-          duration: "16 mins",
-          distance: "2.8 km",
-          safetyScore: 92,
-          warnings: [],
-          path: safestPath,
-        },
+        fastest: fastestRoute,
+        safest: safestRoute,
       });
     } catch (error) {
-       console.error("Routing error:", error);
+      console.error("Routing error:", error);
     } finally {
       setLoading(false);
     }
@@ -71,6 +109,13 @@ export default function SafeNavigation() {
     const routeName = selectedRoute === "safest" ? "Safest" : "Fastest";
     alert(`Initiating ${routeName} Protocol. Navigation active.`);
   };
+
+  const emptyStateLabel = useMemo(() => {
+    if (safetyLoading) return "Loading live safety data...";
+    if (safetyError) return safetyError;
+    if (safetyData.length === 0) return "No safety history is available yet for this route.";
+    return "";
+  }, [safetyData.length, safetyError, safetyLoading]);
 
   return (
     <div className="space-y-10">
@@ -150,6 +195,18 @@ export default function SafeNavigation() {
                   </>
                 )}
               </Button>
+
+              {emptyStateLabel && (
+                <div className="rounded-2xl border border-slate-200/60 bg-white/70 px-4 py-3 text-sm text-slate-600">
+                  {emptyStateLabel}
+                </div>
+              )}
+
+              {deviationAlert && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                  {deviationAlert}
+                </div>
+              )}
             </div>
           </Card>
 
@@ -206,10 +263,13 @@ export default function SafeNavigation() {
                   zoom={14}
                   from={origin.coords}
                   to={destination.coords}
+                  safetyData={safetyData}
+                  communityReports={communityReports}
                 >
                   <RouteLayer
                     fastestRoute={routes?.fastest?.path}
                     safestRoute={routes?.safest?.path}
+                    safetyData={safetyData}
                   />
                 </MapView>
               </div>
