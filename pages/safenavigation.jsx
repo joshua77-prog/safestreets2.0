@@ -270,6 +270,7 @@ export default function SafeNavigation() {
                     fastestRoute={routes?.fastest?.path}
                     safestRoute={routes?.safest?.path}
                     safetyData={safetyData}
+                    selectedRoute={selectedRoute}
                   />
                 </MapView>
               </div>
