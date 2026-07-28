@@ -144,10 +144,18 @@ export default function SafetyReports() {
 
       {/* Report Form Modal */}
       {showReportForm && (
-        <ReportForm 
-          onSubmit={handleSubmitReport}
-          onCancel={() => setShowReportForm(false)}
-        />
+        <div className="fixed inset-0 z-[200] overflow-y-auto p-4 md:p-6 flex items-start sm:items-center justify-center">
+          <div 
+            onClick={() => setShowReportForm(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
+          />
+          <div className="relative w-full max-w-2xl my-auto py-6 z-10">
+            <ReportForm 
+              onSubmit={handleSubmitReport}
+              onCancel={() => setShowReportForm(false)}
+            />
+          </div>
+        </div>
       )}
 
       {/* Content Tabs */}

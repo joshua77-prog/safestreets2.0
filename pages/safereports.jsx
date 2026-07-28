@@ -198,19 +198,19 @@ export default function SafetyReports() {
       {/* Modal Form Overlay */}
       <AnimatePresence>
         {showReportForm && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[200] overflow-y-auto p-4 md:p-6 flex items-start sm:items-center justify-center">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowReportForm(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl"
+              className="relative w-full max-w-2xl my-auto py-6 z-10"
             >
               <ReportForm 
                 onSubmit={handleSubmitReport}

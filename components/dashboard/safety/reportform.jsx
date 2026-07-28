@@ -7,33 +7,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { 
   MapPin, 
   Star,
-  AlertTriangle,
   Shield,
   X,
   Send,
-  Sparkles,
   Zap,
   Target,
-  Navigation,
-  Activity
+  Clock,
+  ThumbsUp,
+  ThumbsDown,
+  Edit3
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
-const REPORT_TYPES = [
-  { value: "incident", label: "Critical Incident", color: "rose", icon: AlertTriangle },
-  { value: "safe_zone", label: "Guarded Zone", color: "emerald", icon: Shield },
-  { value: "poor_lighting", label: "Luminosity Alert", color: "amber", icon: Activity },
-  { value: "suspicious_activity", label: "Anomalous Activity", color: "rose", icon: AlertTriangle },
-  { value: "police_presence", label: "Force Presence", color: "indigo", icon: Shield },
-  { value: "well_lit", label: "Photon Optimized", color: "emerald", icon: Sparkles },
-  { value: "busy_area", label: "High Volume", color: "blue", icon: Activity },
+const POSITIVE_REPORTS = [
+  "Brightly Lit Street",
+  "Busy Area",
+  "High Foot Traffic",
+  "Guarded Premises",
+  "Active Commercial Area",
+  "Police Patrol",
+  "CCTV Coverage",
+  "Residential Area",
+  "Active Nightlife",
+  "Other"
+];
+
+const NEGATIVE_REPORTS = [
+  "Harassment",
+  "Theft / Pickpocketing",
+  "Poor Lighting",
+  "Reckless Driving",
+  "Stray Animal Threat",
+  "Road Hazard",
+  "Suspicious Activity",
+  "Assault / Violence",
+  "Drunk People",
+  "Isolated Area",
+  "Other"
 ];
 
 const TIME_OPTIONS = [
-  { value: "morning", label: "Morning Operations" },
-  { value: "afternoon", label: "Midday Interval" },
-  { value: "evening", label: "Evening Shift" },
-  { value: "night", label: "Night Cycle" },
+  { value: "morning", label: "Morning (6AM - 12PM)" },
+  { value: "afternoon", label: "Afternoon (12PM - 5PM)" },
+  { value: "evening", label: "Evening (5PM - 9PM)" },
+  { value: "night", label: "Night (9PM - 2AM)" },
   { value: "late_night", label: "Critical Hours (2AM - 6AM)" },
 ];
 
@@ -47,24 +64,59 @@ export default function ReportForm({ onSubmit, onCancel }) {
     description: "",
     time_of_day: ""
   });
+
+  const [positiveSelection, setPositiveSelection] = useState("");
+  const [negativeSelection, setNegativeSelection] = useState("");
+  const [isOtherSelected, setIsOtherSelected] = useState(false);
+  const [customReportText, setCustomReportText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setFormData({
-            ...formData,
+          setFormData(prev => ({
+            ...prev,
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             location: "G-POS Locked: " + position.coords.latitude.toFixed(4) + ", " + position.coords.longitude.toFixed(4)
-          });
+          }));
         },
         (error) => {
            console.error("Location lock failed:", error);
         }
       );
     }
+  };
+
+  const handlePositiveSelect = (val) => {
+    setPositiveSelection(val);
+    setNegativeSelection("");
+    if (val === "Other") {
+      setIsOtherSelected(true);
+      setFormData(prev => ({ ...prev, report_type: customReportText.trim() || "Other" }));
+    } else {
+      setIsOtherSelected(false);
+      setFormData(prev => ({ ...prev, report_type: val }));
+    }
+  };
+
+  const handleNegativeSelect = (val) => {
+    setNegativeSelection(val);
+    setPositiveSelection("");
+    if (val === "Other") {
+      setIsOtherSelected(true);
+      setFormData(prev => ({ ...prev, report_type: customReportText.trim() || "Other" }));
+    } else {
+      setIsOtherSelected(false);
+      setFormData(prev => ({ ...prev, report_type: val }));
+    }
+  };
+
+  const handleCustomTextChange = (e) => {
+    const text = e.target.value;
+    setCustomReportText(text);
+    setFormData(prev => ({ ...prev, report_type: text.trim() || "Other" }));
   };
 
   const handleSubmit = async (e) => {
@@ -79,38 +131,39 @@ export default function ReportForm({ onSubmit, onCancel }) {
     }
   };
 
-  const selectedReportType = REPORT_TYPES.find(type => type.value === formData.report_type);
-
   return (
-    <div className="premium-card glass overflow-hidden border-white shadow-2xl bg-white/60">
-      <div className="p-8 border-b border-slate-200/50 flex items-center justify-between bg-slate-900 text-white">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-emerald-500 shadow-lg shadow-emerald-500/20">
-            <Zap className="w-6 h-6 text-white" />
+    <div className="premium-card glass border-white shadow-2xl bg-white/95 backdrop-blur-2xl w-full rounded-3xl overflow-hidden flex flex-col max-h-[85vh] md:max-h-[88vh]">
+      {/* Header */}
+      <div className="p-5 md:p-6 border-b border-slate-200/50 flex items-center justify-between bg-slate-900 text-white shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/20">
+            <Zap className="w-5 h-5 text-white" />
           </div>
           <div>
-             <h3 className="text-xl font-black tracking-tight">Intelligence Log</h3>
+             <h3 className="text-lg font-black tracking-tight">Intelligence Log</h3>
              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Protocol Entry v4.0</p>
           </div>
         </div>
-        <button onClick={onCancel} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button type="button" onClick={onCancel} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors">
           <X className="w-5 h-5" />
         </button>
       </div>
 
-      <div className="p-8">
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid md:grid-cols-2 gap-8">
+      <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+        {/* Scrollable Middle Body */}
+        <div className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar space-y-6">
+          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
             {/* Left Column */}
-            <div className="space-y-8">
-              <div className="space-y-3">
+            <div className="space-y-6">
+              {/* Positional Core */}
+              <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Positional Core *</Label>
                 <div className="relative group">
                   <Input
                     value={formData.location}
                     onChange={(e) => setFormData({...formData, location: e.target.value})}
                     placeholder="Enter sector address..."
-                    className="pl-12 py-6 glass border-white/80 focus:border-emerald-500/50 rounded-2xl transition-all font-bold"
+                    className="pl-12 py-5 glass border-slate-200 focus:border-emerald-500/50 rounded-2xl transition-all font-bold text-sm"
                     required
                   />
                   <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
@@ -124,109 +177,177 @@ export default function ReportForm({ onSubmit, onCancel }) {
                 </div>
               </div>
 
-              <div className="space-y-4">
+              {/* Safety Index Rating */}
+              <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Safety Index Rating *</Label>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   {[1, 2, 3, 4, 5].map((rating) => (
                     <button
                       key={rating}
                       type="button"
                       onClick={() => setFormData({...formData, safety_rating: rating})}
-                      className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all ${
+                      className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all ${
                         formData.safety_rating >= rating
-                          ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20 scale-110'
-                          : 'bg-white/20 border-white/80 text-slate-300 hover:border-amber-200'
+                          ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105'
+                          : 'bg-white/40 border-slate-200 text-slate-300 hover:border-amber-200'
                       }`}
                     >
-                      <Star className={`w-6 h-6 ${formData.safety_rating >= rating ? 'fill-current' : ''}`} />
+                      <Star className={`w-5 h-5 ${formData.safety_rating >= rating ? 'fill-current' : ''}`} />
                     </button>
                   ))}
                 </div>
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="space-y-3">
-                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Protocol Type *</Label>
-                    <Select value={formData.report_type} onValueChange={(value) => setFormData({...formData, report_type: value})} required>
-                      <SelectTrigger className="glass py-6 border-white/80 rounded-2xl font-bold">
-                        <SelectValue placeholder="Select type" />
+
+              {/* REPORT TYPE * */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Report Type *</Label>
+                  {formData.report_type && (
+                    <span className="text-[10px] font-bold text-emerald-600 truncate max-w-[180px]">
+                      Selected: {formData.report_type}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Positive Reports Dropdown */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1">
+                      <ThumbsUp className="w-3 h-3" /> Positive Report
+                    </span>
+                    <Select value={positiveSelection} onValueChange={handlePositiveSelect}>
+                      <SelectTrigger className="glass py-4 border-emerald-200 hover:border-emerald-400 rounded-2xl font-bold text-xs">
+                        <SelectValue placeholder="Select Positive..." />
                       </SelectTrigger>
                       <SelectContent className="glass">
-                        {REPORT_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value} className="font-bold">
-                            <div className="flex items-center gap-2">
-                              <type.icon className={`w-4 h-4 text-${type.color}-500`} />
-                              {type.label}
-                            </div>
+                        {POSITIVE_REPORTS.map((item) => (
+                          <SelectItem key={item} value={item} className="font-bold text-xs text-emerald-800">
+                            {item}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                 </div>
-                 
-                 <div className="space-y-3">
-                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Observation Phase *</Label>
-                    <Select value={formData.time_of_day} onValueChange={(value) => setFormData({...formData, time_of_day: value})} required>
-                      <SelectTrigger className="glass py-6 border-white/80 rounded-2xl font-bold">
-                        <SelectValue placeholder="Select cycle" />
+                  </div>
+
+                  {/* Negative Reports Dropdown */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 flex items-center gap-1">
+                      <ThumbsDown className="w-3 h-3" /> Negative Report
+                    </span>
+                    <Select value={negativeSelection} onValueChange={handleNegativeSelect}>
+                      <SelectTrigger className="glass py-4 border-rose-200 hover:border-rose-400 rounded-2xl font-bold text-xs">
+                        <SelectValue placeholder="Select Negative..." />
                       </SelectTrigger>
                       <SelectContent className="glass">
-                        {TIME_OPTIONS.map((time) => (
-                          <SelectItem key={time.value} value={time.value} className="font-bold">
-                            {time.label}
+                        {NEGATIVE_REPORTS.map((item) => (
+                          <SelectItem key={item} value={item} className="font-bold text-xs text-rose-800">
+                            {item}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                 </div>
+                  </div>
+                </div>
+
+                {/* Custom Input when "Other" is selected */}
+                <AnimatePresence>
+                  {isOtherSelected && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pt-2 space-y-1.5"
+                    >
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                        <Edit3 className="w-3 h-3 text-emerald-500" /> Specify Custom Details
+                      </Label>
+                      <Input
+                        type="text"
+                        value={customReportText}
+                        onChange={handleCustomTextChange}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                          }
+                        }}
+                        placeholder="Type custom report detail and press Enter..."
+                        className="glass border-emerald-400/60 focus:border-emerald-500 rounded-xl py-3 px-4 font-bold text-xs text-slate-900"
+                        autoFocus
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* TIME * */}
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Time *</Label>
+                <Select value={formData.time_of_day} onValueChange={(value) => setFormData({...formData, time_of_day: value})} required>
+                  <SelectTrigger className="glass py-4 border-slate-200 rounded-2xl font-bold text-xs">
+                    <SelectValue placeholder="Select time cycle..." />
+                  </SelectTrigger>
+                  <SelectContent className="glass">
+                    {TIME_OPTIONS.map((time) => (
+                      <SelectItem key={time.value} value={time.value} className="font-bold text-xs">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          {time.label}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             {/* Right Column */}
-            <div className="space-y-3">
+            <div className="space-y-2 flex flex-col">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Intelligence Briefing</Label>
               <Textarea
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 placeholder="Log granular details for community synthesis..."
-                className="glass border-white/80 rounded-2xl min-h-[220px] p-6 focus:border-emerald-500/50 transition-all font-medium leading-relaxed"
+                className="glass border-slate-200 rounded-2xl min-h-[220px] flex-1 p-4 focus:border-emerald-500/50 transition-all font-medium leading-relaxed"
               />
             </div>
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-slate-200/50">
+        {/* Fixed Action Footer */}
+        <div className="p-4 md:p-5 bg-slate-50/90 border-t border-slate-200/60 shrink-0 space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 py-4 px-6 rounded-2xl border border-slate-200 text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-colors"
+              className="flex-1 py-3 px-5 rounded-xl border border-slate-200 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-100 transition-colors"
             >
               Abort Entry
             </button>
             <Button
               type="submit"
               disabled={submitting || !formData.location || !formData.report_type || !formData.time_of_day}
-              className="flex-[2] btn-premium btn-primary py-4 h-auto shadow-2xl shadow-emerald-500/20"
+              className="flex-[2] btn-premium btn-primary py-3.5 h-auto shadow-xl shadow-emerald-500/20"
             >
               {submitting ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Synchronizing...
                 </>
               ) : (
                 <>
                   Transmit Observation
-                  <Send className="w-5 h-5 fill-white" />
+                  <Send className="w-4 h-4 fill-white" />
                 </>
               )}
             </Button>
           </div>
-        </form>
-      </div>
-      
-      <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-3">
-         <Shield className="w-4 h-4 text-emerald-500" />
-         <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">End-to-End Cryptographic Security Active</span>
-      </div>
+
+          <div className="flex items-center justify-center gap-2 pt-1">
+             <Shield className="w-3.5 h-3.5 text-emerald-500" />
+             <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">End-to-End Cryptographic Security Active</span>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }
