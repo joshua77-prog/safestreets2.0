@@ -1,7 +1,10 @@
 import { supabase } from "../src/lib/supabase";
 
-const SAFETY_TABLE = '"Safety Analysis"';
-const COMMUNITY_REPORTS_TABLE = "community_reports";
+// Memory cache of tables confirmed missing in the database to prevent repeated 404 network requests
+const missingTables = new Set();
+
+const PRIMARY_SAFETY_TABLE = "safety_analysis";
+const PRIMARY_COMMUNITY_REPORTS_TABLE = "community_reports";
 
 function normalizeSafetyRecord(record) {
   if (!record) return null;
@@ -45,106 +48,140 @@ function haversineDistanceKm(from, to) {
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
 }
 
-export async function getSafetyData() {
-  const { data, error } = await supabase
-    .from(SAFETY_TABLE)
-    .select("*")
-    .order("safety_score", { ascending: false });
-
-  if (error) {
-    console.error("Supabase safety data error:", error);
-    return [];
+// Quiet query executor that avoids spamming network 404s if table is missing
+async function safeQuery(tableName, queryFn) {
+  // If table was already checked and returned 404, return early without making network request
+  if (missingTables.has(tableName)) {
+    return { data: [], error: null };
   }
 
-  return (data ?? []).map(normalizeSafetyRecord).filter(Boolean);
+  try {
+    const query = supabase.from(tableName);
+    const { data, error } = await queryFn(query);
+
+    if (error) {
+      const isNotFound = error.status === 404 || error.code === 'PGRST301' || error.code === '42P01' || (error.message && error.message.includes("Could not find the table"));
+      if (isNotFound) {
+        missingTables.add(tableName);
+      }
+      return { data: [], error };
+    }
+
+    return { data: data ?? [], error: null };
+  } catch (err) {
+    missingTables.add(tableName);
+    return { data: [], error: err };
+  }
+}
+
+export async function getSafetyData() {
+  try {
+    const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
+      builder.select("*").order("safety_score", { ascending: false })
+    );
+
+    if (data.length > 0) {
+      return data.map(normalizeSafetyRecord).filter(Boolean);
+    }
+  } catch {}
+
+  return [];
 }
 
 export async function getSafetyDataByCity(city) {
-  const { data, error } = await supabase
-    .from(SAFETY_TABLE)
-    .select("*")
-    .eq("city", city)
-    .order("safety_score", { ascending: false });
+  try {
+    const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
+      builder.select("*").eq("city", city).order("safety_score", { ascending: false })
+    );
 
-  if (error) {
-    console.error("Supabase city safety error:", error);
-    return [];
-  }
+    if (data.length > 0) {
+      return data.map(normalizeSafetyRecord).filter(Boolean);
+    }
+  } catch {}
 
-  return (data ?? []).map(normalizeSafetyRecord).filter(Boolean);
+  return [];
 }
 
 export async function getNearbyLocations(latitude, longitude, radius = 5) {
-  const records = await getSafetyData();
-  const center = { latitude: Number(latitude), longitude: Number(longitude) };
-  const radiusKm = Number(radius) || 5;
+  try {
+    const records = await getSafetyData();
+    const center = { latitude: Number(latitude), longitude: Number(longitude) };
+    const radiusKm = Number(radius) || 5;
 
-  return records.filter((record) => {
-    const distance = haversineDistanceKm(center, {
-      latitude: Number(record.latitude),
-      longitude: Number(record.longitude),
+    return records.filter((record) => {
+      const distance = haversineDistanceKm(center, {
+        latitude: Number(record.latitude),
+        longitude: Number(record.longitude),
+      });
+
+      return Number.isFinite(distance) && distance <= radiusKm;
     });
-
-    return Number.isFinite(distance) && distance <= radiusKm;
-  });
+  } catch {
+    return [];
+  }
 }
 
 export async function getCommunityReports() {
-  const { data, error } = await supabase
-    .from(COMMUNITY_REPORTS_TABLE)
-    .select("*")
-    .order("created_at", { ascending: false });
+  try {
+    const { data } = await safeQuery(PRIMARY_COMMUNITY_REPORTS_TABLE, (builder) =>
+      builder.select("*").order("created_at", { ascending: false })
+    );
 
-  if (error) {
-    console.error("Supabase community reports error:", error);
-    return [];
-  }
+    if (data.length > 0) {
+      return data.map(normalizeCommunityReport).filter(Boolean);
+    }
+  } catch {}
 
-  return (data ?? []).map(normalizeCommunityReport).filter(Boolean);
+  return [];
 }
 
 export async function addCommunityReport(report) {
-  const payload = {
-    latitude: Number(report.latitude),
-    longitude: Number(report.longitude),
-    issue_type: report.issue_type,
-    description: report.description,
-    image_url: report.image_url ?? null,
-    reported_by: report.reported_by ?? "Guest",
-    created_at: report.created_at ?? new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from(COMMUNITY_REPORTS_TABLE)
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Supabase report insert error:", error);
-    throw error;
+  if (missingTables.has(PRIMARY_COMMUNITY_REPORTS_TABLE)) {
+    return null;
   }
 
-  return normalizeCommunityReport(data);
+  try {
+    const payload = {
+      latitude: Number(report.latitude),
+      longitude: Number(report.longitude),
+      issue_type: report.issue_type,
+      description: report.description,
+      image_url: report.image_url ?? null,
+      reported_by: report.reported_by ?? "Guest",
+      created_at: report.created_at ?? new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.status === 404 || error.code === 'PGRST301' || error.code === '42P01') {
+        missingTables.add(PRIMARY_COMMUNITY_REPORTS_TABLE);
+      }
+      return null;
+    }
+
+    return normalizeCommunityReport(data);
+  } catch {
+    missingTables.add(PRIMARY_COMMUNITY_REPORTS_TABLE);
+    return null;
+  }
 }
 
 export async function updateSafetyScore(updates = {}, filters = {}) {
-  let query = supabase.from(SAFETY_TABLE).update(updates);
+  try {
+    const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) => {
+      let query = builder.update(updates);
+      if (filters.city) query = query.eq("city", filters.city);
+      if (filters.area) query = query.eq("area", filters.area);
+      return query.select();
+    });
 
-  if (filters.city) {
-    query = query.eq("city", filters.city);
-  }
-
-  if (filters.area) {
-    query = query.eq("area", filters.area);
-  }
-
-  const { data, error } = await query.select();
-
-  if (error) {
-    console.error("Supabase safety score update error:", error);
+    return data.map(normalizeSafetyRecord).filter(Boolean);
+  } catch {
     return [];
   }
-
-  return (data ?? []).map(normalizeSafetyRecord).filter(Boolean);
 }

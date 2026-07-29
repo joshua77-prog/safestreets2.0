@@ -35,6 +35,76 @@ export default function SafeNavigation() {
   const [safetyError, setSafetyError] = useState("");
   const [deviationAlert, setDeviationAlert] = useState("");
 
+  // Live Location & Camera Lock State
+  const [userLiveCoords, setUserLiveCoords] = useState(null);
+  const [flyToTarget, setFlyToTarget] = useState(null);
+  const [recenterOnUser, setRecenterOnUser] = useState(true);
+  const [isUserInteracting, setIsUserInteracting] = useState(false);
+
+  // 1. Initial live location fetch & continuous watchPosition for Origin
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    // Fetch immediate initial position
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const coords = [latitude, longitude];
+        setUserLiveCoords(coords);
+        setOrigin((prev) => ({
+          label: prev.label || "Live Location",
+          coords: prev.coords || coords,
+        }));
+      },
+      (error) => {
+        console.warn("Initial geolocation error:", error);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    );
+
+    // Continuous watchPosition for live origin updates in the background
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const coords = [latitude, longitude];
+        setUserLiveCoords(coords);
+        setOrigin((prev) => {
+          if (!prev.label || prev.label === "Live Location" || prev.label === "Current Location" || prev.label === "Auto-detected location") {
+            return { label: "Live Location", coords };
+          }
+          return prev;
+        });
+      },
+      (error) => {
+        console.warn("Live geolocation watch warning:", error);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const useLiveLocationAsOrigin = () => {
+    if (userLiveCoords) {
+      setOrigin({ label: "Live Location", coords: userLiveCoords });
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const coords = [pos.coords.latitude, pos.coords.longitude];
+        setUserLiveCoords(coords);
+        setOrigin({ label: "Live Location", coords });
+      });
+    }
+  };
+
+  const handleShowLiveLocation = () => {
+    const coords = userLiveCoords || origin.coords;
+    if (coords) {
+      setIsUserInteracting(false);
+      setRecenterOnUser(true);
+      setFlyToTarget({ coords, key: Date.now() });
+    }
+  };
+
   useEffect(() => {
     void loadSafetyContext();
   }, []);
@@ -75,6 +145,9 @@ export default function SafeNavigation() {
   const handleRouteCalculation = async () => {
     if (!origin.coords || !destination.coords) return;
     setLoading(true);
+    // Disable auto-recentering on live location updates when route is active
+    setRecenterOnUser(false);
+    setIsUserInteracting(false);
 
     try {
       const safetyContext = {
@@ -96,6 +169,10 @@ export default function SafeNavigation() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLocateMe = () => {
+    handleShowLiveLocation();
   };
 
   const handleFastestRoute = () => {
@@ -130,12 +207,20 @@ export default function SafeNavigation() {
             Safe <span className="gradient-text">Navigation</span>
           </h1>
         </div>
-        {!routes && (
-          <div className="hidden md:flex items-center gap-3 glass px-5 py-2.5 rounded-2xl text-slate-500 font-medium border-white/60">
-            <Locate className="w-4 h-4 text-emerald-500" />
-            Real-time positioning active
-          </div>
-        )}
+        
+        {/* Real-time positioning button */}
+        <button
+          type="button"
+          onClick={handleShowLiveLocation}
+          className="flex items-center gap-2.5 glass hover:bg-slate-900 hover:text-white px-5 py-2.5 rounded-2xl text-slate-800 font-semibold border-white/60 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+          title="Click to view live location on map"
+        >
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
+          </span>
+          <span className="text-sm">Real-time positioning</span>
+        </button>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-10">
@@ -157,7 +242,18 @@ export default function SafeNavigation() {
                     value={origin.label}
                     onChange={(val) => setOrigin({ label: val, coords: origin.coords })}
                     onSelect={(sel) => setOrigin(sel)}
-                    placeholder="Auto-detected location"
+                    onSelectLive={useLiveLocationAsOrigin}
+                    headerRight={
+                      <button
+                        type="button"
+                        onClick={useLiveLocationAsOrigin}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors border border-blue-200"
+                      >
+                        <Locate className="w-3.5 h-3.5" />
+                        Use Live Location
+                      </button>
+                    }
+                    placeholder="Type address or select Live Location"
                   />
                 </div>
                 
@@ -240,7 +336,7 @@ export default function SafeNavigation() {
                   <h3 className="text-xl font-bold tracking-tight">Intelligence Map</h3>
                 </div>
                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest pl-11">
-                  Red: Vulnerable Path | Green: Guarded Path
+                  Red Pin: Origin | Green Pin: Destination
                 </p>
               </div>
               
@@ -259,12 +355,19 @@ export default function SafeNavigation() {
             <CardContent className="p-0 flex-grow relative">
               <div className="absolute inset-0 grayscale-[0.2] contrast-[1.1]">
                 <MapView
-                  center={origin.coords || [12.9716, 77.5946]}
+                  center={origin.coords || userLiveCoords || [12.9716, 77.5946]}
                   zoom={14}
                   from={origin.coords}
                   to={destination.coords}
+                  userLocation={userLiveCoords}
+                  flyToTarget={flyToTarget}
                   safetyData={safetyData}
                   communityReports={communityReports}
+                  recenterOnUser={recenterOnUser && !isUserInteracting}
+                  onUserInteract={() => {
+                    setIsUserInteracting(true);
+                    setRecenterOnUser(false);
+                  }}
                 >
                   <RouteLayer
                     fastestRoute={routes?.fastest?.path}
@@ -277,8 +380,12 @@ export default function SafeNavigation() {
               
               {/* Floating Controls Overlay */}
               <div className="absolute bottom-6 right-6 flex flex-col gap-3">
-                 <button className="w-12 h-12 glass-dark rounded-xl flex items-center justify-center text-white hover:scale-110 transition-transform shadow-2xl">
-                    <Locate className="w-5 h-5" />
+                 <button 
+                  onClick={handleLocateMe}
+                  title="Recenter on live position"
+                  className="w-12 h-12 glass-dark rounded-xl flex items-center justify-center text-white hover:scale-110 transition-transform shadow-2xl"
+                 >
+                    <Locate className="w-5 h-5 text-emerald-400" />
                  </button>
                  <div className="flex flex-col gap-1 glass-dark rounded-xl p-1 text-white shadow-2xl">
                     <button className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-lg font-bold">+</button>
