@@ -47,6 +47,22 @@ export const EmergencyContact = {
 		items.push(newItem);
 		writeStore('emergency_contacts', items);
 		return newItem;
+	},
+	async update(id, updates) {
+		const items = readStore('emergency_contacts', emergencyContactsSeed);
+		const idx = items.findIndex((i) => i.id === id);
+		if (idx >= 0) {
+			items[idx] = { ...items[idx], ...updates };
+			writeStore('emergency_contacts', items);
+			return items[idx];
+		}
+		return null;
+	},
+	async delete(id) {
+		const items = readStore('emergency_contacts', emergencyContactsSeed);
+		const filtered = items.filter((i) => i.id !== id);
+		writeStore('emergency_contacts', filtered);
+		return true;
 	}
 };
 

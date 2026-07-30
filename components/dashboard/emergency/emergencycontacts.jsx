@@ -14,12 +14,14 @@ import {
   Mail,
   Trash2,
   UserPlus,
-  Star
+  Star,
+  AlertTriangle
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function EmergencyContacts({ contacts, loading, onContactsChange }) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [contactToDelete, setContactToDelete] = useState(null);
   const [newContact, setNewContact] = useState({
     name: "",
     phone: "",
@@ -49,9 +51,11 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
     }
   };
 
-  const handleDeleteContact = async (contactId) => {
+  const confirmDeleteContact = async () => {
+    if (!contactToDelete) return;
     try {
-      await EmergencyContact.delete(contactId);
+      await EmergencyContact.delete(contactToDelete.id);
+      setContactToDelete(null);
       onContactsChange();
     } catch (error) {
       console.error("Error deleting contact:", error);
@@ -232,7 +236,7 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteContact(contact.id)}
+                        onClick={() => setContactToDelete(contact)}
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -245,6 +249,50 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {contactToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-slate-900">Delete Contact?</h3>
+                  <p className="text-sm text-slate-500">This action cannot be undone.</p>
+                </div>
+              </div>
+
+              <p className="text-slate-600 text-sm">
+                Are you sure you really want to delete <span className="font-semibold text-slate-900">{contactToDelete.name}</span> from your emergency contacts?
+              </p>
+
+              <div className="flex gap-3 pt-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setContactToDelete(null)}
+                  className="border-slate-200 hover:bg-slate-100"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDeleteContact}
+                  className="bg-red-600 hover:bg-red-700 text-white font-medium shadow-md shadow-red-200"
+                >
+                  Yes, Delete
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

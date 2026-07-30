@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
+    "axios": "^1.19.0",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "framer-motion": "^11.2.6",
     "leaflet": "^1.9.4",
