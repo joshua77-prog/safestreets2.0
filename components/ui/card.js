@@ -1,5 +1,5 @@
 import React from 'react';
 
-export { Card, CardContent, CardHeader, CardTitle } from './card.jsx';
+export { Card, CardContent, CardHeader, CardTitle, CardDescription } from './card.jsx';
 
 

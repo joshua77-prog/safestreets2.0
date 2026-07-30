@@ -5,7 +5,9 @@ const PAGE_TO_PATH = {
 	Emergency: '/emergency',
 	SafetyReports: '/safetyreports',
 	Profile: '/profile',
-	Onboarding: '/onboarding'
+	Onboarding: '/onboarding',
+	SignUp: '/signup',
+	Login: '/login'
 };
 
 export function createPageUrl(pageName) {

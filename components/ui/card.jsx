@@ -12,6 +12,10 @@ export function CardTitle({ className = '', children }) {
 	return <h3 className={`card-title ${className}`}>{children}</h3>;
 }
 
+export function CardDescription({ className = '', children }) {
+	return <p className={`card-description ${className}`}>{children}</p>;
+}
+
 export function CardContent({ className = '', children }) {
 	return <div className={`card-content ${className}`}>{children}</div>;
 }

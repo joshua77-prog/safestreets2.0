@@ -98,29 +98,44 @@ export default function Welcome() {
             variants={itemVariants}
             className="text-2xl text-slate-500 max-w-3xl mx-auto leading-relaxed mb-12 font-medium"
           >
-            {isNewUser ? (
-              <>Authentication successful, <span className="text-slate-900 font-black italic">{user?.full_name?.split(' ')[0] || 'OP-01'}</span>. Begin tactical synchronization to authorize personal protection protocols.</>
+            {user ? (
+              <>Welcome back, <span className="text-slate-900 font-black italic">{user?.full_name?.split(' ')[0] || 'User'}</span>. Your safety dashboard and strategic routes are ready.</>
             ) : (
-              <>Welcome back, <span className="text-slate-900 font-black italic">{user?.full_name?.split(' ')[0] || 'COMMANDER'}</span>. Your strategic security grid is active and processing real-time sector data.</>
+              <>Empowering your daily travels with real-time AI safety scores, emergency protocols, and strategic route guidance.</>
             )}
           </motion.p>
 
-          {!isNewUser && (
-            <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-center gap-6">
-              <Link to={createPageUrl("Dashboard")}>
-                <Button className="btn-premium btn-primary py-7 px-10 text-lg shadow-[0_20px_50px_rgba(16,185,129,0.3)] h-auto">
-                   Enter Command Center
-                  <ArrowRight className="w-6 h-6" />
-                </Button>
-              </Link>
-              <Link to={createPageUrl("SafeNavigation")}>
-                <Button className="btn-premium glass-dark text-white border-0 py-7 px-10 text-lg h-auto hover:bg-slate-800">
-                  Sector Navigation
-                  <Navigation className="w-5 h-5 ml-3" />
-                </Button>
-              </Link>
-            </motion.div>
-          )}
+          <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-center gap-4">
+            {user ? (
+              <>
+                <Link to={createPageUrl("Dashboard")}>
+                  <Button className="btn-premium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-7 px-10 text-lg shadow-[0_20px_50px_rgba(16,185,129,0.3)] h-auto">
+                    Go to Dashboard
+                    <ArrowRight className="w-6 h-6 ml-2" />
+                  </Button>
+                </Link>
+                <Link to={createPageUrl("SafeNavigation")}>
+                  <Button className="btn-premium glass-dark text-white border-0 py-7 px-10 text-lg h-auto hover:bg-slate-800">
+                    Safe Navigation
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to={createPageUrl("SignUp")}>
+                  <Button className="btn-premium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-7 px-10 text-lg shadow-[0_20px_50px_rgba(16,185,129,0.3)] h-auto">
+                    Sign Up
+                    <ArrowRight className="w-6 h-6 ml-2" />
+                  </Button>
+                </Link>
+                <Link to={createPageUrl("Login")}>
+                  <Button className="btn-premium glass-dark text-white border-0 py-7 px-10 text-lg h-auto hover:bg-slate-800">
+                    Log In
+                  </Button>
+                </Link>
+              </>
+            )}
+          </motion.div>
         </div>
 
         {isNewUser ? (

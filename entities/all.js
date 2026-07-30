@@ -104,25 +104,29 @@ export const SOSAlert = {
 export const User = {
 	async me() {
 		const raw = localStorage.getItem('current_user');
-		if (raw) return JSON.parse(raw);
-		const user = {
-			id: 'me',
-			full_name: 'Safe Streets User',
-			email: 'user@example.com',
-			role: 'user'
-		};
-		localStorage.setItem('current_user', JSON.stringify(user));
-		return user;
+		if (raw) {
+			try { return JSON.parse(raw); } catch {}
+		}
+		return null;
 	},
 	async updateMyUserData(updates) {
-		const user = await this.me();
-		const merged = { ...user, ...updates };
+		const current = (await this.me()) || {};
+		const merged = { ...current, ...updates, isAuthenticated: true };
 		localStorage.setItem('current_user', JSON.stringify(merged));
 		return merged;
 	},
-	async loginWithRedirect(returnTo) {
-		// Simulate auth flow
-		return true;
+	async logout() {
+		localStorage.removeItem('current_user');
+	},
+	isAuthenticated() {
+		const raw = localStorage.getItem('current_user');
+		if (!raw) return false;
+		try {
+			const u = JSON.parse(raw);
+			return !!u && (u.isAuthenticated === true || (!!u.id && u.id !== 'guest'));
+		} catch {
+			return false;
+		}
 	}
 };
 

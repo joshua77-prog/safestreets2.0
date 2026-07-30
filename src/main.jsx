@@ -13,9 +13,31 @@ import SafetyReports from '../pages/safereports.jsx';
 import Profile from '../pages/profile.jsx';
 import Onboarding from '../pages/onboarding.jsx';
 import UIShowcase from '../pages/ui.jsx';
+import SignUp from '../pages/signup.jsx';
+import Login from '../pages/login.jsx';
+import { User as UserEntity } from '@/entities/all';
+
+function ProtectedRoute({ children }) {
+  const isAuth = UserEntity.isAuthenticated();
+  if (!isAuth) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+function PublicOnlyRoute({ children }) {
+  const isAuth = UserEntity.isAuthenticated();
+  if (isAuth) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+}
 
 const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/welcome" replace /> },
+  { 
+    path: '/', 
+    element: <Navigate to={UserEntity.isAuthenticated() ? "/dashboard" : "/login"} replace /> 
+  },
   {
     path: '/welcome',
     element: (
@@ -25,51 +47,83 @@ const router = createBrowserRouter([
     ),
   },
   {
+    path: '/signup',
+    element: (
+      <PublicOnlyRoute>
+        <Layout currentPageName="SignUp">
+          <SignUp />
+        </Layout>
+      </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: '/login',
+    element: (
+      <PublicOnlyRoute>
+        <Layout currentPageName="Login">
+          <Login />
+        </Layout>
+      </PublicOnlyRoute>
+    ),
+  },
+  {
     path: '/dashboard',
     element: (
-      <Layout currentPageName="Dashboard">
-        <Dashboard />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="Dashboard">
+          <Dashboard />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
     path: '/safenavigation',
     element: (
-      <Layout currentPageName="SafeNavigation">
-        <SafeNavigation />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="SafeNavigation">
+          <SafeNavigation />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
     path: '/emergency',
     element: (
-      <Layout currentPageName="Emergency">
-        <Emergency />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="Emergency">
+          <Emergency />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
     path: '/safetyreports',
     element: (
-      <Layout currentPageName="SafetyReports">
-        <SafetyReports />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="SafetyReports">
+          <SafetyReports />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
     path: '/profile',
     element: (
-      <Layout currentPageName="Profile">
-        <Profile />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="Profile">
+          <Profile />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
     path: '/onboarding',
     element: (
-      <Layout currentPageName="Onboarding">
-        <Onboarding />
-      </Layout>
+      <ProtectedRoute>
+        <Layout currentPageName="Onboarding">
+          <Onboarding />
+        </Layout>
+      </ProtectedRoute>
     ),
   },
   {
@@ -80,7 +134,7 @@ const router = createBrowserRouter([
       </Layout>
     ),
   },
-  { path: '*', element: <Navigate to="/welcome" replace /> },
+  { path: '*', element: <Navigate to={UserEntity.isAuthenticated() ? "/dashboard" : "/login"} replace /> },
 ], {
   future: {
     v7_startTransition: true,
@@ -98,5 +152,3 @@ root.render(
     <RouterProvider router={router} future={{ v7_startTransition: true }} />
   </React.StrictMode>
 );
-
-
