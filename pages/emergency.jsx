@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { EmergencyContact, SOSAlert } from "../entities/all.js";
+import { EmergencyContact, SOSAlert, triggerSOS } from "../entities/all.js";
+import { useLocationTracking } from "../hooks/useLocationTracking.js";
 import { Button } from "../components/ui/button.jsx";
 import { Card, CardContent } from "../components/ui/card.jsx";
 import { 
@@ -24,6 +25,8 @@ import EmergencyContacts from "../components/emergency/emergencycontacts.jsx";
 import { VoiceActivation } from "../components/emergency/VoiceActivation.jsx";
 
 export default function Emergency() {
+  const { getCurrentLocation, reverseGeocode, saveLocation } = useLocationTracking();
+
   const [contacts, setContacts] = useState([]);
   const [activeAlert, setActiveAlert] = useState(null);
   const [isListening, setIsListening] = useState(false);
@@ -110,46 +113,27 @@ export default function Emergency() {
     setCountdownActive(false);
     setWorkflowStatus("Dispatching support");
 
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setWorkflowMessage("Location services unavailable. Offline cache will retain the last known coordinates.");
-      return;
-    }
-
     try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 10000,
-        });
-      });
+      // Steps 1 - 4: Retrieve latest user location from user_locations table in Supabase and copy values into sos_alerts table
+      const res = await triggerSOS(
+        alertType,
+        `${message || "Emergency assistance needed"} [${source}]`,
+        contacts.map((contact) => contact.id)
+      );
 
-      const alertData = {
-        alert_type: alertType,
-        location: "Current Location",
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        message: `${message || "Emergency assistance needed"} [${source}]`,
-        contacts_notified: contacts.map((contact) => contact.id),
-      };
+      const alert = res.alert;
+      const location = res.location;
 
-      const alert = await SOSAlert.create(alertData);
       setActiveAlert(alert);
-      setLastKnownLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-      setWorkflowMessage("Live location sharing and dispatch guidance are active.");
+      setLastKnownLocation({ latitude: location.latitude, longitude: location.longitude });
+
+      const locDisplay = location.address || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
+      setWorkflowMessage(`SOS dispatch active at ${locDisplay} (retrieved from user_locations).`);
       if (navigator.vibrate) navigator.vibrate([200, 100, 300]);
     } catch (error) {
-      console.error("Error sending SOS alert:", error);
-      const fallbackLocation = lastKnownLocation || { latitude: 0, longitude: 0 };
-      persistOfflineLocation(fallbackLocation);
-      setWorkflowMessage("Offline mode active. The last known GPS position will be shared when connectivity is restored.");
-      const alert = await SOSAlert.create({
-        alert_type: alertType,
-        location: "Location unavailable",
-        message: `${message || "Emergency assistance needed"} [${source}]`,
-        contacts_notified: contacts.map((contact) => contact.id),
-      });
-      setActiveAlert(alert);
+      console.error("SOS workflow error:", error);
+      setWorkflowStatus("Location error");
+      setWorkflowMessage(error.message || "No location found in user_locations database table. Please enable location tracking before sending SOS.");
     }
   };
 
@@ -228,7 +212,7 @@ export default function Emergency() {
                 <div>
                    <h3 className="text-3xl font-black tracking-tight mb-1">CRITICAL SOS ACTIVE</h3>
                    <p className="text-rose-100 font-bold uppercase tracking-[0.2em] text-xs pl-0.5">
-                     Dispatch initiated at {new Date(activeAlert.created_date).toLocaleTimeString()}
+                     Dispatch initiated at {new Date(activeAlert.created_date || activeAlert.created_at).toLocaleTimeString()}
                    </p>
                 </div>
               </div>
@@ -282,31 +266,31 @@ export default function Emergency() {
         {/* Tactical Controls */}
         <div className="lg:col-span-5 space-y-8">
            <Card className="premium-card glass border-white/60 p-8 bg-white/40 shadow-xl">
-             <div className="space-y-10">
-                <div className="flex items-center gap-4">
-                   <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500">
-                      <Mic className="w-6 h-6" />
-                   </div>
-                   <div>
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight">Voice Engagement</h3>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Acoustic Signal Recognition</p>
-                   </div>
-                </div>
+              <div className="space-y-10">
+                 <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500">
+                       <Mic className="w-6 h-6" />
+                    </div>
+                    <div>
+                       <h3 className="text-xl font-black text-slate-900 tracking-tight">Voice Engagement</h3>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Acoustic Signal Recognition</p>
+                    </div>
+                 </div>
 
-                <VoiceActivation 
-                  isListening={isListening}
-                  onToggleListening={setIsListening}
-                  onVoiceAlert={handleSOSAlert}
-                  disabled={!!activeAlert}
-                />
-                
-                <div className="pt-6 border-t border-slate-100/50 flex items-center gap-3">
-                   <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-500 animate-ping' : 'bg-slate-300'}`}></div>
-                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                     {isListening ? 'Listening for strategic keywords...' : 'Voice protocol standby'}
-                   </span>
-                </div>
-             </div>
+                 <VoiceActivation 
+                   isListening={isListening}
+                   onToggleListening={setIsListening}
+                   onVoiceAlert={handleSOSAlert}
+                   disabled={!!activeAlert}
+                 />
+                 
+                 <div className="pt-6 border-t border-slate-100/50 flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-500 animate-ping' : 'bg-slate-300'}`}></div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {isListening ? 'Listening for strategic keywords...' : 'Voice protocol standby'}
+                    </span>
+                 </div>
+              </div>
            </Card>
 
            <Card className="premium-card glass-dark p-8 border-0 shadow-2xl">
@@ -358,6 +342,3 @@ export default function Emergency() {
     </div>
   );
 }
-
-
-

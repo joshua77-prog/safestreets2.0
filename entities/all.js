@@ -36,6 +36,186 @@ async function getAuthUserId() {
 	}
 }
 
+/**
+ * Retrieve the latest stored location for a user from the user_locations Supabase table.
+ */
+export async function getLatestUserLocation(userId = null) {
+	let uId = userId;
+	if (!uId) {
+		uId = await getAuthUserId();
+	}
+	if (!uId) return null;
+
+	try {
+		const { data, error } = await supabase
+			.from('user_locations')
+			.select('*')
+			.eq('user_id', uId)
+			.order('updated_at', { ascending: false })
+			.limit(1);
+
+		if (!error && Array.isArray(data) && data.length > 0) {
+			const row = data[0];
+			return {
+				id: row.id,
+				user_id: row.user_id,
+				latitude: Number(row.latitude),
+				longitude: Number(row.longitude),
+				address: row.address || "",
+				updated_at: row.updated_at
+			};
+		} else if (error) {
+			console.warn("Error querying user_locations in Supabase:", error);
+		}
+	} catch (err) {
+		console.warn("Exception querying user_locations in Supabase:", err);
+	}
+
+	return null;
+}
+
+/**
+ * Create a new snapshot record in the sos_alerts table copying values from user_locations.
+ */
+export async function createSOSAlert(alertData) {
+	const userId = await getAuthUserId();
+	const now = new Date().toISOString();
+
+	const lat = Number(alertData.latitude || 0);
+	const lon = Number(alertData.longitude || 0);
+	const addr = alertData.address || alertData.location || "Stored Location";
+
+	let createdAlert = {
+		id: generateId('alert'),
+		user_id: userId || 'local',
+		alert_type: alertData.alert_type || 'manual_sos',
+		location: addr,
+		address: addr,
+		latitude: lat,
+		longitude: lon,
+		status: alertData.status || 'active',
+		message: alertData.message || 'Emergency assistance needed',
+		contacts_notified: alertData.contacts_notified || [],
+		created_date: now,
+		created_at: now
+	};
+
+	if (userId) {
+		try {
+			// Payload copying latitude, longitude, address, user_id
+			const fullPayload = {
+				user_id: userId,
+				latitude: lat,
+				longitude: lon,
+				address: addr,
+				created_at: now
+			};
+
+			if (alertData.alert_type) fullPayload.alert_type = alertData.alert_type;
+			if (alertData.location) fullPayload.location = alertData.location;
+			if (alertData.message) fullPayload.message = alertData.message;
+			if (alertData.status) fullPayload.status = alertData.status || 'active';
+
+			const { data: inserted, error } = await supabase
+				.from('sos_alerts')
+				.insert(fullPayload)
+				.select()
+				.single();
+
+			if (!error && inserted) {
+				createdAlert = {
+					...createdAlert,
+					id: inserted.id,
+					user_id: inserted.user_id,
+					latitude: Number(inserted.latitude || lat),
+					longitude: Number(inserted.longitude || lon),
+					address: inserted.address || addr,
+					created_at: inserted.created_at || now,
+					created_date: inserted.created_at || now
+				};
+				console.log("SUCCESS: Created SOS alert snapshot in Supabase sos_alerts table:", inserted);
+			} else if (error) {
+				console.warn("Supabase sos_alerts insert error (trying minimal schema fallback):", error);
+				
+				const minPayload = {
+					user_id: userId,
+					latitude: lat,
+					longitude: lon,
+					created_at: now
+				};
+
+				const { data: minInserted, error: minErr } = await supabase
+					.from('sos_alerts')
+					.insert(minPayload)
+					.select()
+					.single();
+
+				if (!minErr && minInserted) {
+					createdAlert = {
+						...createdAlert,
+						id: minInserted.id,
+						user_id: minInserted.user_id,
+						latitude: Number(minInserted.latitude),
+						longitude: Number(minInserted.longitude),
+						created_at: minInserted.created_at,
+						created_date: minInserted.created_at
+					};
+					console.log("SUCCESS: Created SOS alert in Supabase (minimal schema fallback):", minInserted);
+				} else {
+					console.error("Error creating SOS alert in Supabase:", minErr);
+				}
+			}
+		} catch (err) {
+			console.error("Failed to insert SOS alert into Supabase:", err);
+		}
+	}
+
+	// Always update local cache for UI continuity
+	const items = readStore('sos_alerts', sosAlertSeed);
+	items.unshift(createdAlert);
+	writeStore('sos_alerts', items);
+
+	return createdAlert;
+}
+
+/**
+ * Execute the SOS workflow:
+ * Step 1: Retrieve authenticated user ID.
+ * Step 2: Query latest stored location from user_locations table.
+ * Step 3: Validate location exists (otherwise throw error).
+ * Step 4: Copy location values into sos_alerts table.
+ */
+export async function triggerSOS(alertType = 'manual_sos', message = '', contactsNotified = []) {
+	const userId = await getAuthUserId();
+	if (!userId) {
+		throw new Error("User authentication required to trigger SOS.");
+	}
+
+	// Step 2: Query user_locations table for latest location
+	const location = await getLatestUserLocation(userId);
+
+	// Step 3: Check if location exists
+	if (!location || location.latitude === undefined || location.longitude === undefined) {
+		throw new Error("No location found in user_locations table. Please enable location tracking before sending SOS.");
+	}
+
+	// Step 4: Create snapshot record in sos_alerts table copying user_locations values
+	const alertRecord = await createSOSAlert({
+		user_id: userId,
+		latitude: location.latitude,
+		longitude: location.longitude,
+		address: location.address || "Stored Location",
+		alert_type: alertType,
+		message: message || "Emergency assistance needed",
+		contacts_notified: contactsNotified
+	});
+
+	return {
+		alert: alertRecord,
+		location
+	};
+}
+
 export const SafetyReport = {
 	async list(order = '-created_date') {
 		const items = readStore('safety_reports', safetyReportsSeed);
@@ -85,7 +265,6 @@ export const EmergencyContact = {
 						});
 					});
 
-					// Merge local items with database items so newly added local contacts also display
 					localItems.forEach((item) => {
 						if (!dbMap.has(item.id)) {
 							dbMap.set(item.id, item);
@@ -157,7 +336,6 @@ export const EmergencyContact = {
 			}
 		}
 
-		// Always persist to localStore so screen updates instantly
 		const items = readStore('emergency_contacts', emergencyContactsSeed);
 		items.unshift(newContactItem);
 		writeStore('emergency_contacts', items);
@@ -231,28 +409,89 @@ export const EmergencyContact = {
 
 export const SOSAlert = {
 	async list(order = '-created_date', limit = 10) {
-		const items = readStore('sos_alerts', sosAlertSeed);
-		const ordered = [...items].sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
-		return ordered.slice(0, limit);
+		const userId = await getAuthUserId();
+		const localItems = readStore('sos_alerts', sosAlertSeed);
+
+		if (userId) {
+			try {
+				const { data, error } = await supabase
+					.from('sos_alerts')
+					.select('*')
+					.eq('user_id', userId)
+					.order('created_at', { ascending: false })
+					.limit(limit);
+
+				if (!error && Array.isArray(data)) {
+					const dbMap = new Map();
+					data.forEach((item) => {
+						dbMap.set(item.id, {
+							id: item.id,
+							user_id: item.user_id,
+							alert_type: item.alert_type || 'manual_sos',
+							location: item.location || item.address || 'Current Location',
+							address: item.address || item.location || 'Current Location',
+							latitude: Number(item.latitude || 0),
+							longitude: Number(item.longitude || 0),
+							status: item.status || 'active',
+							message: item.message || '',
+							created_at: item.created_at || item.created_date,
+							created_date: item.created_at || item.created_date || new Date().toISOString()
+						});
+					});
+
+					localItems.forEach((item) => {
+						if (!dbMap.has(item.id)) {
+							dbMap.set(item.id, item);
+						}
+					});
+
+					return Array.from(dbMap.values()).slice(0, limit);
+				}
+			} catch (err) {
+				console.warn("Supabase sos_alerts read error:", err);
+			}
+		}
+
+		return localItems.slice(0, limit);
 	},
+
 	async filter(query = {}, order = '-created_date', limit = 10) {
 		const items = await this.list(order, 1000);
 		const filtered = items.filter((i) => Object.entries(query).every(([k, v]) => i[k] === v));
 		return filtered.slice(0, limit);
 	},
+
 	async create(data) {
-		const items = readStore('sos_alerts', sosAlertSeed);
-		const newItem = {
-			id: generateId('alert'),
-			status: 'active',
-			created_date: new Date().toISOString(),
-			...data
-		};
-		items.unshift(newItem);
-		writeStore('sos_alerts', items);
-		return newItem;
+		return createSOSAlert(data);
 	},
+
 	async update(id, updates) {
+		const userId = await getAuthUserId();
+
+		if (userId && id) {
+			try {
+				const payload = {};
+				if (updates.status !== undefined) payload.status = updates.status;
+				if (updates.resolved_at !== undefined) payload.resolved_at = updates.resolved_at;
+
+				if (Object.keys(payload).length > 0) {
+					const { error } = await supabase
+						.from('sos_alerts')
+						.update(payload)
+						.eq('id', id)
+						.eq('user_id', userId);
+
+					if (error) {
+						console.warn("Supabase sos_alerts update error:", error);
+					} else {
+						console.log("Updated sos_alert status in Supabase:", { id, updates });
+					}
+				}
+			} catch (err) {
+				console.warn("Failed to update SOS alert in Supabase:", err);
+			}
+		}
+
 		const items = readStore('sos_alerts', sosAlertSeed);
 		const idx = items.findIndex((i) => i.id === id);
 		if (idx >= 0) {

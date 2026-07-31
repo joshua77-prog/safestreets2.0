@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SOSAlert, SafetyReport, EmergencyContact } from "@/entities/all";
+import { useLocationTracking } from "../hooks/useLocationTracking";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -17,7 +18,12 @@ import {
   TrendingUp,
   Activity,
   Zap,
-  Sparkles
+  Sparkles,
+  Radio,
+  Compass,
+  AlertCircle,
+  LocateFixed,
+  Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -26,6 +32,18 @@ import SafetyMetrics from "../components/dashboard/safemetrics.jsx";
 import RecentActivity from "../components/dashboard/RecentActivity.jsx";
 
 export default function Dashboard() {
+  const {
+    location,
+    address,
+    permissionStatus,
+    loading: locationLoading,
+    error: locationError,
+    lastSavedAt,
+    requestLocationPermission,
+    startTracking,
+    stopTracking
+  } = useLocationTracking();
+
   const [stats, setStats] = useState({
     totalAlerts: 0,
     activeAlerts: 0,
@@ -38,6 +56,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadDashboardData();
+    // Prompt for location permission and start automatic background location tracking (every 5 minutes)
+    void requestLocationPermission();
+    startTracking(300000);
+
+    return () => {
+      stopTracking();
+    };
   }, []);
 
   const loadDashboardData = async () => {
@@ -110,6 +135,97 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+      {/* Live User Location Tracking Widget */}
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+      >
+        <Card className="border-0 shadow-lg bg-gradient-to-r from-emerald-900/90 via-slate-900 to-teal-950 text-white rounded-3xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 blur-[100px] rounded-full -mr-32 -mt-32 pointer-events-none"></div>
+          <CardContent className="p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-400/30 rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
+                <MapPin className="w-7 h-7 text-emerald-400 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400 flex items-center gap-1">
+                    <Radio className="w-3 h-3 text-emerald-400 animate-spin" />
+                    Live Geolocation Tracking
+                  </span>
+                  {permissionStatus === "granted" ? (
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px]">
+                      GPS Active (High Accuracy)
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
+                      Location Connected
+                    </Badge>
+                  )}
+                </div>
+
+                <h3 className="text-xl font-bold text-white tracking-tight">
+                  {address ? (
+                    `${address.street || address.area ? `${address.street || address.area}, ` : ""}${address.city || address.state || "Current Position"}`
+                  ) : location ? (
+                    `GPS: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
+                  ) : (
+                    "Acquiring GPS Position..."
+                  )}
+                </h3>
+
+                <p className="text-xs text-slate-300 max-w-xl">
+                  {address?.displayName ? address.displayName : "Your coordinates are continuously synced every 5 minutes and protected via Supabase Auth."}
+                </p>
+
+                {locationError && (
+                  <p className="text-xs text-amber-300 font-medium flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> {locationError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col items-end shrink-0 gap-2 text-right border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6 w-full md:w-auto">
+              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Last Synced</div>
+              <div className="text-xs font-semibold text-emerald-300">
+                {lastSavedAt ? new Date(lastSavedAt).toLocaleTimeString() : "Syncing..."}
+              </div>
+              
+              <div className="flex items-center gap-2 mt-1">
+                {locationLoading ? (
+                  <Button
+                    size="sm"
+                    disabled
+                    className="bg-amber-500/80 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md"
+                  >
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Syncing Location...
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={requestLocationPermission}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md"
+                  >
+                    <LocateFixed className="w-3.5 h-3.5" />
+                    Refresh Location
+                  </Button>
+                )}
+
+                <Link to="/safenavigation">
+                  <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md">
+                    <Compass className="w-3.5 h-3.5" />
+                    View Map Navigation
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Primary Dashboard Modules */}
       <div className="grid grid-cols-1 gap-10">
         <section>
@@ -164,7 +280,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
- 
-
-
