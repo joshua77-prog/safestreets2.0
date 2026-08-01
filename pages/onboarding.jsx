@@ -41,7 +41,7 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
 
   const [contacts, setContacts] = useState([
-    { name: "", phone: "", relationship: "family" }
+    { name: "", phone: "", email: "", relationship: "family" }
   ]);
 
   const [profileData, setProfileData] = useState({
@@ -75,7 +75,7 @@ export default function Onboarding() {
   };
 
   const handleAddContact = () => {
-    setContacts([...contacts, { name: "", phone: "", relationship: "family" }]);
+    setContacts([...contacts, { name: "", phone: "", email: "", relationship: "family" }]);
   };
 
   const handleRemoveContact = (index) => {
@@ -266,7 +266,7 @@ export default function Onboarding() {
                             )}
                           </div>
                           
-                          <div className="grid md:grid-cols-3 gap-6">
+                          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div className="space-y-2">
                               <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Identity</Label>
                               <Input
@@ -282,6 +282,16 @@ export default function Onboarding() {
                                 value={contact.phone}
                                 onChange={(e) => handleContactChange(index, 'phone', e.target.value)}
                                 placeholder="+1 (000) 000-0000"
+                                className="bg-white/10 border-white/20 text-white placeholder:text-slate-600 font-bold focus:border-white/40 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</Label>
+                              <Input
+                                type="email"
+                                value={contact.email || ""}
+                                onChange={(e) => handleContactChange(index, 'email', e.target.value)}
+                                placeholder="contact@example.com"
                                 className="bg-white/10 border-white/20 text-white placeholder:text-slate-600 font-bold focus:border-white/40 h-12 rounded-xl"
                               />
                             </div>

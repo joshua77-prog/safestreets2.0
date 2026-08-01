@@ -18,6 +18,17 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+const formatDate = (dateVal) => {
+  if (!dateVal) return "Recently";
+  const date = new Date(dateVal);
+  if (isNaN(date.getTime())) return "Recently";
+  try {
+    return format(date, 'MMM d, yyyy • h:mm a');
+  } catch {
+    return "Recently";
+  }
+};
+
 const getReportTypeStyles = (reportType) => {
   switch (reportType) {
     case 'incident':
@@ -145,7 +156,7 @@ export default function ReportsList({ reports, loading, filterType, onFilterChan
                            <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em]">
                               <div className="flex items-center gap-1.5">
                                  <Clock className="w-3.5 h-3.5" />
-                                 {format(new Date(report.created_date), 'MMM d, yyyy • h:mm a')}
+                                 {formatDate(report.created_date || report.created_at || report.timestamp)}
                               </div>
                               <div className="flex items-center gap-1.5 border-l border-slate-200 pl-4">
                                  <Eye className="w-3.5 h-3.5" />

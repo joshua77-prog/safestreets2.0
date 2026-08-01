@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { User as UserEntity } from "@/entities/all";
+import { User as UserEntity, EmergencyContact } from "@/entities/all";
 import { supabase } from "./src/lib/supabase";
 import { 
   Shield, 
@@ -28,6 +28,9 @@ export default function Layout({ children, currentPageName }) {
       const hasSession = !!data?.session;
       const isAuth = hasSession || UserEntity.isAuthenticated();
       setIsAuthenticated(isAuth);
+      if (!isAuth) {
+        EmergencyContact.clearCache();
+      }
     };
 
     checkAuth();
@@ -35,6 +38,9 @@ export default function Layout({ children, currentPageName }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setIsAuthenticated(true);
+      } else {
+        EmergencyContact.clearCache();
+        setIsAuthenticated(false);
       }
     });
 
@@ -44,6 +50,7 @@ export default function Layout({ children, currentPageName }) {
   }, [location.pathname]);
 
   const handleLogout = async () => {
+    EmergencyContact.clearCache();
     await UserEntity.logout();
     await supabase.auth.signOut();
     setIsAuthenticated(false);

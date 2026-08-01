@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-import ReportForm from "../components/safety/ReportForm";
-import ReportsList from "../components/safety/ReportsList";
-import SafetyMap from "../components/safety/SafetyMap";
+import ReportForm from "../components/safety/reportform.jsx";
+import ReportsList from "../components/safety/reportlist.jsx";
+import SafetyMap from "../components/safety/safetymap.jsx";
 
 export default function SafetyReports() {
   const [reports, setReports] = useState([]);

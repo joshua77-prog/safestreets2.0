@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { User, EmergencyContact } from "@/entities/all";
+import { supabase } from "../src/lib/supabase.js";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Input } from "@/components/ui/input.jsx";
@@ -40,11 +41,21 @@ export default function Profile() {
 
   const loadUserData = useCallback(async () => {
     try {
+      setLoading(true);
+      // Requirement 1 & 4: Clear state before loading new data and replace completely
+      setContacts([]);
+      setUser(null);
+
       const currentUser = await User.me();
+      if (!currentUser) {
+        setContacts([]);
+        return;
+      }
+
       const emergencyContacts = await EmergencyContact.list();
       
       setUser(currentUser);
-      setContacts(emergencyContacts);
+      setContacts(emergencyContacts || []);
       
       const initialSafetyPreferences = { 
         auto_share_location: true, 
@@ -65,6 +76,7 @@ export default function Profile() {
       
     } catch (error) {
       console.error("Error loading user data:", error);
+      setContacts([]);
     } finally {
       setLoading(false);
     }
@@ -72,6 +84,22 @@ export default function Profile() {
 
   useEffect(() => {
     loadUserData();
+
+    // Requirement 3: Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Requirement 2 & 3: Reset contacts state & clear cache
+      setContacts([]);
+      setUser(null);
+      EmergencyContact.clearCache();
+
+      if (session?.user) {
+        loadUserData();
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, [loadUserData]);
 
   const handleSaveProfile = async () => {

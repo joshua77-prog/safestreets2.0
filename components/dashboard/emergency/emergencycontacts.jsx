@@ -25,6 +25,7 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
   const [newContact, setNewContact] = useState({
     name: "",
     phone: "",
+    email: "",
     relationship: "",
     is_primary: false,
     notify_sms: true,
@@ -39,6 +40,7 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
       setNewContact({
         name: "",
         phone: "",
+        email: "",
         relationship: "",
         is_primary: false,
         notify_sms: true,
@@ -130,6 +132,16 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
                   />
                 </div>
                 <div className="md:col-span-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={newContact.email}
+                    onChange={(e) => setNewContact({...newContact, email: e.target.value})}
+                    placeholder="Enter email address"
+                  />
+                </div>
+                <div className="md:col-span-2">
                   <Label htmlFor="relationship">Relationship</Label>
                   <Select
                     value={newContact.relationship}
@@ -207,11 +219,17 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
                             {contact.relationship}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-slate-600 mt-1">
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 mt-1">
                           <span className="flex items-center gap-1">
                             <Phone className="w-3 h-3" />
                             {contact.phone}
                           </span>
+                          {contact.email && (
+                            <span className="flex items-center gap-1">
+                              <Mail className="w-3 h-3 text-slate-400" />
+                              {contact.email}
+                            </span>
+                          )}
                           <div className="flex gap-2">
                             {contact.notify_sms && (
                               <Badge variant="outline" className="text-xs">SMS</Badge>

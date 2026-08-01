@@ -10,6 +10,10 @@
         "type": "string",
         "description": "Phone number"
       },
+      "email": {
+        "type": "string",
+        "description": "Email address of emergency contact"
+      },
       "relationship": {
         "type": "string",
         "enum": [

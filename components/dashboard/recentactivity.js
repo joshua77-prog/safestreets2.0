@@ -14,6 +14,17 @@ import {
   XCircle
 } from "lucide-react";
 
+const formatDate = (dateVal) => {
+  if (!dateVal) return "Recently";
+  const date = new Date(dateVal);
+  if (isNaN(date.getTime())) return "Recently";
+  try {
+    return format(date, 'MMM d, h:mm a');
+  } catch {
+    return "Recently";
+  }
+};
+
 const getStatusColor = (status, type) => {
   if (type === 'alerts') {
     switch (status) {
@@ -125,7 +136,7 @@ export default function RecentActivity({ title, items, type, loading }) {
                   
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <Clock className="w-3 h-3" />
-                    {format(new Date(item.created_date), 'MMM d, h:mm a')}
+                    {formatDate(item.created_date || item.created_at || item.timestamp)}
                     {type === 'reports' && (
                       <span className="ml-2">• {item.time_of_day}</span>
                     )}

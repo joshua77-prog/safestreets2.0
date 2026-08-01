@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { EmergencyContact, SOSAlert, triggerSOS } from "../entities/all.js";
+import { supabase } from "../src/lib/supabase.js";
 import { useLocationTracking } from "../hooks/useLocationTracking.js";
 import { Button } from "../components/ui/button.jsx";
 import { Card, CardContent } from "../components/ui/card.jsx";
@@ -37,8 +38,59 @@ export default function Emergency() {
   const [workflowStatus, setWorkflowStatus] = useState("Standby");
   const [lastKnownLocation, setLastKnownLocation] = useState(null);
 
+  const loadEmergencyData = async () => {
+    try {
+      setLoading(true);
+      // Requirement 1 & 4: Clear existing state before loading and replace completely
+      setContacts([]);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setContacts([]);
+        setActiveAlert(null);
+        return;
+      }
+
+      const [contactList, activeAlerts] = await Promise.all([
+        EmergencyContact.list(),
+        SOSAlert.filter({ status: 'active' }, '-created_date', 1)
+      ]);
+      
+      setContacts(contactList || []);
+      if (activeAlerts && activeAlerts.length > 0) {
+        setActiveAlert(activeAlerts[0]);
+      } else {
+        setActiveAlert(null);
+      }
+    } catch (error) {
+      console.error("Error loading emergency data:", error);
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadEmergencyData();
+
+    // Requirement 3: Detect auth state change using Supabase Auth
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Requirement 2 & 3: Reset contacts state & clear cached data
+      setContacts([]);
+      setActiveAlert(null);
+      EmergencyContact.clearCache();
+
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setContacts([]);
+        setLoading(false);
+      } else if (session?.user) {
+        loadEmergencyData();
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -67,24 +119,6 @@ export default function Emergency() {
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
   }, []);
-
-  const loadEmergencyData = async () => {
-    try {
-      const [contactList, activeAlerts] = await Promise.all([
-        EmergencyContact.list(),
-        SOSAlert.filter({ status: 'active' }, '-created_date', 1)
-      ]);
-      
-      setContacts(contactList);
-      if (activeAlerts.length > 0) {
-        setActiveAlert(activeAlerts[0]);
-      }
-    } catch (error) {
-      console.error("Error loading emergency data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const persistOfflineLocation = (location) => {
     if (typeof window === "undefined") return;

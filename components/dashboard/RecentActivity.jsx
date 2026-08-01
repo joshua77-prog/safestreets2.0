@@ -16,6 +16,17 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+const formatDate = (dateVal) => {
+  if (!dateVal) return "Recently";
+  const date = new Date(dateVal);
+  if (isNaN(date.getTime())) return "Recently";
+  try {
+    return format(date, "h:mm a, MMM d");
+  } catch {
+    return "Recently";
+  }
+};
+
 const getStatusStyles = (status, type) => {
   if (type === 'alerts') {
     switch (status) {
@@ -95,7 +106,7 @@ export default function RecentActivity({ title, items, type, loading }) {
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                          <Clock className="w-3 h-3" />
-                         {format(new Date(item.created_date), 'h:mm a, MMM d')}
+                         {formatDate(item.created_date || item.created_at || item.timestamp)}
                       </div>
                     </div>
                     

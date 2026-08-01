@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SOSAlert, SafetyReport, EmergencyContact } from "@/entities/all";
+import { supabase } from "../src/lib/supabase.js";
 import { useLocationTracking } from "../hooks/useLocationTracking";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -54,19 +55,18 @@ export default function Dashboard() {
   const [recentReports, setRecentReports] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDashboardData();
-    // Prompt for location permission and start automatic background location tracking (every 5 minutes)
-    void requestLocationPermission();
-    startTracking(300000);
-
-    return () => {
-      stopTracking();
-    };
-  }, []);
-
   const loadDashboardData = async () => {
     try {
+      setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setStats({ totalAlerts: 0, activeAlerts: 0, safetyReports: 0, emergencyContacts: 0 });
+        setRecentAlerts([]);
+        setRecentReports([]);
+        return;
+      }
+
       const [alerts, reports, contacts] = await Promise.all([
         SOSAlert.list('-created_date', 5),
         SafetyReport.list('-created_date', 5),
@@ -79,7 +79,7 @@ export default function Dashboard() {
         totalAlerts: alerts.length,
         activeAlerts,
         safetyReports: reports.length,
-        emergencyContacts: contacts.length
+        emergencyContacts: contacts ? contacts.length : 0
       });
 
       setRecentAlerts(alerts);
@@ -90,6 +90,30 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadDashboardData();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      EmergencyContact.clearCache();
+      if (!session?.user) {
+        setStats({ totalAlerts: 0, activeAlerts: 0, safetyReports: 0, emergencyContacts: 0 });
+        setRecentAlerts([]);
+        setRecentReports([]);
+      } else {
+        loadDashboardData();
+      }
+    });
+
+    // Prompt for location permission and start automatic background location tracking (every 5 minutes)
+    void requestLocationPermission();
+    startTracking(300000);
+
+    return () => {
+      stopTracking();
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   return (
     <div className="space-y-12">

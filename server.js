@@ -1,121 +1,353 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import axios from "axios";
 import dotenv from "dotenv";
+import { createClient } from "@supabase/supabase-js";
+import { callEmergencyContact } from "./services/exotelService.js";
+import { sendEmergencyEmail } from "./services/emailService.js";
 
 dotenv.config();
 
 const app = express();
-
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 app.use(express.static(path.join(__dirname, "dist")));
 
-// ---------------------
-// Example API route
-// ---------------------
+// ─────────────────────────────────────────────────────────────
+// Supabase Admin Client (backend only)
+// ─────────────────────────────────────────────────────────────
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("❌ Supabase environment variables missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env");
+}
+
+const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+// ─────────────────────────────────────────────────────────────
+// Helper: Resolve Authenticated User ID from Bearer token or body
+// ─────────────────────────────────────────────────────────────
+async function resolveAuthenticatedUserId(req) {
+  if (!supabase) return null;
+
+  // Prefer Bearer token from Authorization header (most secure)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (!error && user?.id) {
+        return user.id;
+      }
+    } catch {
+      // fall through to body fallback
+    }
+  }
+
+  // Fallback: accept userId from request body (used when token forwarding is unavailable)
+  return req.body?.userId || req.body?.user_id || null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/hello — Health check
+// ─────────────────────────────────────────────────────────────
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "Hello from backend!" });
+  res.json({ message: "Safe Streets backend is running." });
 });
 
-// ---------------------
-// Exotel SOS Call API
-// ---------------------
-app.post("/api/sos/call", async (req, res) => {
+// ─────────────────────────────────────────────────────────────
+// POST /api/sos — Full SOS Workflow (10 steps)
+// ─────────────────────────────────────────────────────────────
+app.post("/api/sos", async (req, res) => {
   try {
-    const { userNumber, emergencyNumber } = req.body;
-
-    if (!userNumber || !emergencyNumber) {
-      return res.status(400).json({
+    if (!supabase) {
+      return res.status(500).json({
         success: false,
-        message: "userNumber and emergencyNumber are required.",
+        error: "Supabase is not configured on the backend. Check environment variables."
       });
     }
 
-    const exotelUrl = `https://${process.env.EXOTEL_SUBDOMAIN}/v1/Accounts/${process.env.EXOTEL_ACCOUNT_SID}/Calls/connect`;
+    // ── Step 1: Retrieve the currently authenticated user ──────────────────
+    const userId = await resolveAuthenticatedUserId(req);
 
-    const params = new URLSearchParams();
-    params.append("From", userNumber);
-    params.append("To", emergencyNumber);
-    params.append("CallerId", process.env.EXOTEL_CALLER_ID);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "User is not authenticated. Please log in before triggering SOS."
+      });
+    }
 
-    const response = await axios.post(exotelUrl, params, {
-      auth: {
-        username: process.env.EXOTEL_API_KEY,
-        password: process.env.EXOTEL_API_TOKEN,
-      },
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    });
+    console.log(`[SOS] Step 1 ✔ Authenticated user ID: ${userId}`);
 
-    console.log("Exotel Response:", response.data);
+    // ── Step 2: Retrieve the user record from the users table ──────────────
+    const { data: userRecord, error: userError } = await supabase
+      .from("users")
 
-    res.json({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      .select("id, full_name, phone")
+      .eq("id", userId)
+      .single();
+
+    if (userError || !userRecord) {
+      console.warn("[SOS] Step 2 ✘ Could not retrieve user record:", userError?.message);
+      // Non-fatal — we still have userId. Continue.
+    } else {
+      console.log(`[SOS] Step 2 ✔ User record: ${userRecord.full_name} (${userRecord.phone})`);
+    }
+
+    // ── Step 3: Query emergency_contacts table for this user ───────────────
+    const { data: emergencyContacts, error: contactError } = await supabase
+      .from("emergency_contacts")
+      .select("id, full_name, number, relationship, email")
+      .eq("user_id", userId);
+
+    if (contactError) {
+      console.error("[SOS] Step 3 ✘ emergency_contacts query error:", contactError.message);
+    }
+
+    console.log(`[SOS] Step 3 ✔ Found ${emergencyContacts?.length ?? 0} emergency contact(s) for user ${userId}`);
+
+    // ── Step 4: Return error if no emergency contacts exist ────────────────
+    if (!emergencyContacts || emergencyContacts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "No emergency contacts found for this user. Please add at least one emergency contact in your profile before using SOS."
+      });
+    }
+
+    // ── Step 5: Use the first emergency contact's number ───────────────────
+    const primaryContact = emergencyContacts[0];
+    const emergencyContactPhone = primaryContact.number;
+
+    if (!emergencyContactPhone) {
+      return res.status(400).json({
+        success: false,
+        error: `Emergency contact "${primaryContact.full_name}" does not have a phone number. Please update the contact's number.`
+      });
+    }
+
+    console.log(`[SOS] Step 5 ✔ Emergency contact: ${primaryContact.full_name} (${primaryContact.relationship}) — ${emergencyContactPhone}`);
+
+    // ── Step 6: Retrieve latest location from user_locations ───────────────
+    const { data: locationRows, error: locError } = await supabase
+      .from("user_locations")
+      .select("latitude, longitude, address, updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+
+    if (locError) {
+      console.error("[SOS] Step 6 ✘ user_locations query error:", locError.message);
+    }
+
+    if (!locationRows || locationRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "No location found for this user. Please enable location tracking before sending SOS."
+      });
+    }
+
+    const latitude = Number(locationRows[0].latitude);
+    const longitude = Number(locationRows[0].longitude);
+    const address = locationRows[0].address || "Location stored";
+
+    console.log(`[SOS] Step 6 ✔ Location: ${latitude}, ${longitude} — ${address}`);
+
+    // ── Step 7: Create record in sos_alerts (permanent snapshot) ──────────
+    const now = new Date().toISOString();
+
+    let createdAlert = null;
+
+    const { data: alertData, error: alertError } = await supabase
+      .from("sos_alerts")
+      .insert({
+        user_id: userId,
+        latitude: latitude,
+        longitude: longitude,
+        created_at: now
+      })
+      .select()
+      .single();
+
+    if (!alertError && alertData) {
+      createdAlert = alertData;
+      console.log(`[SOS] Step 7 ✔ SOS alert created in sos_alerts: ${createdAlert.id}`);
+    } else {
+      console.warn("[SOS] Step 7 ✘ sos_alerts insert error:", alertError?.message);
+      // Non-fatal — continue with Exotel call even if DB insert fails
+      createdAlert = { user_id: userId, latitude, longitude, created_at: now };
+    }
+
+    // ── Step 8: Generate Google Maps URL ──────────────────────────────────
+    const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+    console.log(`[SOS] Step 8 ✔ Google Maps URL: ${googleMapsUrl}`);
+    // ── Step 8.5: Send Emergency Email ───────────────────────────────
+console.log("[SOS] Step 8.5 — Sending emergency email...");
+
+const emailResult = await sendEmergencyEmail({
+    to: primaryContact.email,
+    contactName: primaryContact.full_name,
+    userName: userRecord?.full_name || "Safe Streets User",
+    userPhone: userRecord?.phone || "Not Available",
+    mapsUrl: googleMapsUrl,
+    latitude,
+    longitude
+});
+
+if (emailResult.success) {
+    console.log("[SOS] Step 8.5 ✔ Email sent successfully.");
+} else {
+    console.warn("[SOS] Step 8.5 ✘ Email failed:", emailResult.error);
+}
+
+    // ── Step 9: Call Exotel Voice API using emergency contact's number ─────
+    console.log(`[SOS] Step 9 — Dispatching Exotel call to emergency contact: ${emergencyContactPhone}`);
+    const exotelResult = await callEmergencyContact(emergencyContactPhone);
+
+    if (exotelResult.success) {
+      console.log(`[SOS] Step 9 ✔ Exotel call dispatched successfully.`);
+    } else {
+      console.warn(`[SOS] Step 9 ✘ Exotel call issue: ${exotelResult.error}`);
+    }
+
+    // ── Step 10: Return success response ──────────────────────────────────
+    return res.json({
       success: true,
-      message: "Call initiated successfully.",
-      data: response.data,
+      message: "SOS alert recorded and emergency contact voice call dispatched.",
+      user: userRecord ? { id: userRecord.id, full_name: userRecord.full_name } : { id: userId },
+      emergencyContact: {
+        full_name: primaryContact.full_name,
+        number: emergencyContactPhone,
+        relationship: primaryContact.relationship
+      },
+      alert: createdAlert,
+      location: { latitude, longitude, address },
+      googleMapsUrl,
+      exotel: exotelResult,
+      email: emailResult
     });
 
-  } catch (error) {
-    console.error(
-      "Exotel Error:",
-      error.response?.data || error.message
-    );
-
-    res.status(500).json({
+  } catch (err) {
+    console.error("[SOS] Unhandled error in POST /api/sos:", err);
+    return res.status(500).json({
       success: false,
-      error: error.response?.data || error.message,
+      error: err.message || "An unexpected server error occurred while processing the SOS request."
     });
   }
 });
 
-// ---------------------
-// 404 handler for API routes
-// ---------------------
+// ─────────────────────────────────────────────────────────────
+// POST /api/sos/call — Direct Exotel call test (dev/debug only)
+// ─────────────────────────────────────────────────────────────
+app.post("/api/sos/call", async (req, res) => {
+  try {
+    const targetPhone = req.body?.emergencyNumber || req.body?.phoneNumber || req.body?.phone || req.body?.userNumber;
+
+    if (!targetPhone) {
+      return res.status(400).json({
+        success: false,
+        error: "A phone number is required (emergencyNumber, phoneNumber, or phone)."
+      });
+    }
+
+    const result = await callEmergencyContact(targetPhone);
+    return res.json(result);
+  } catch (err) {
+    console.error("[Exotel Direct] Error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 404 — API routes only
+// ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) {
-    return res.status(404).json({
-      error: "Not Found",
-      path: req.originalUrl,
-    });
+    return res.status(404).json({ error: "Not Found", path: req.originalUrl });
   }
   next();
 });
 
-// ---------------------
-// React/Vite SPA fallback
-// ---------------------
-app.get("*", (req, res) => {
+// ─────────────────────────────────────────────────────────────
+// SPA fallback (React / Vite)
+// ─────────────────────────────────────────────────────────────
+app.get("/{*splat}", (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// ---------------------
+// ─────────────────────────────────────────────────────────────
 // Global Error Handler
-// ---------------------
+// ─────────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error(
-    "Unhandled server error:",
-    err?.stack || err
-  );
-
+  console.error("Unhandled server error:", err?.stack || err);
   res.status(err.status || 500).json({
     error: err.message || "Internal Server Error",
-    ...(process.env.NODE_ENV === "development"
-      ? { stack: err.stack }
-      : {}),
+    ...(process.env.NODE_ENV === "development" ? { stack: err.stack } : {})
   });
 });
 
-// ---------------------
+// ─────────────────────────────────────────────────────────────
 // Start Server
-// ---------------------
+// ─────────────────────────────────────────────────────────────
 const port = process.env.PORT || 3000;
-
 app.listen(port, () => {
-  console.log(`✅ Server running on http://localhost:${port}`);
+  console.log(`✅ Safe Streets server running on http://localhost:${port}`);
 });
