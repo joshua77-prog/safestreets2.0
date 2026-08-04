@@ -1,5 +1,5 @@
 /**
- * Route Safety Analysis Service - Phase 2 (Final)
+ * Route Safety Analysis Service
  * Analyzes route geometry and collects all safety-related records located within 1 km (1000 meters) of any route coordinate.
  * Calculates shortest distance_from_route (in meters) and sorts nearest-first.
  */

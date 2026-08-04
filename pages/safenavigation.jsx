@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import RouteComparison from "../components/navigation/RouteComparison";
 import NearbySafetyDisplay from "../components/navigation/NearbySafetyDisplay.jsx";
+import SafetyScoreCard from "../components/navigation/SafetyScoreCard.jsx";
 import MapView from "../components/map/MapView.jsx";
 import RouteLayer from "../components/map/RouteLayer.jsx";
 import SearchBox from "../components/map/SearchBox.jsx";
@@ -23,6 +24,7 @@ import { getFastestRoute, getSafestRoute } from "../services/routing";
 import { getCommunityReports, getSafetyData } from "../services/supabaseService";
 import { monitorRouteDeviation } from "../services/routeDeviationService";
 import { analyzeRouteSafetyData } from "../services/routeSafetyAnalysis";
+import { calculateSafetyScoreEngine } from "../services/safetyScoreEngine";
 
 export default function SafeNavigation() {
   const [origin, setOrigin] = useState({ label: "", coords: null });
@@ -193,6 +195,11 @@ export default function SafeNavigation() {
     if (!activeRoute) return null;
     return analyzeRouteSafetyData(activeRoute, communityReports, safetyData);
   }, [activeRoute, communityReports, safetyData]);
+
+  const safetyScoreResult = useMemo(() => {
+    if (!routeAnalysis) return null;
+    return calculateSafetyScoreEngine(routeAnalysis);
+  }, [routeAnalysis]);
 
   const emptyStateLabel = useMemo(() => {
     if (safetyLoading) return "Loading live safety data...";
@@ -404,7 +411,12 @@ export default function SafeNavigation() {
         </div>
       </div>
 
-      {/* Phase 2: Nearby Safety Information Display Below the Map */}
+      {/* Safety Score Assessment Display */}
+      {safetyScoreResult && (
+        <SafetyScoreCard scoreResult={safetyScoreResult} />
+      )}
+
+      {/* Nearby Safety Intelligence Display Below the Map */}
       {routeAnalysis && (
         <NearbySafetyDisplay analysisResult={routeAnalysis} />
       )}

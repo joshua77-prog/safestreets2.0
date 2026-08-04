@@ -58,7 +58,7 @@ export default function NearbySafetyDisplay({ analysisResult }) {
             <div>
               <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase tracking-[0.2em] text-[10px]">
                 <Activity className="w-3.5 h-3.5" />
-                Phase 2 Corridor Scan (1 km Radius)
+                Route Corridor Safety Scan (1 km Radius)
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
                 Route Safety Intelligence
