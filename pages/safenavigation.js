@@ -17,7 +17,6 @@ import {
 import { motion } from "framer-motion";
 
 import RouteComparison from "../components/navigation/RouteComparison";
-import SafetyInsights from "../components/navigation/SafetyInsights";
 import LocationInput from "../components/navigation/LocationInput";
 
 export default function SafeNavigation() {
@@ -82,9 +81,6 @@ export default function SafeNavigation() {
           onRouteSelect={setSelectedRoute}
         />
       )}
-
-      {/* Safety Insights */}
-      <SafetyInsights routes={routes} />
     </div>
   );
 }

@@ -15,13 +15,14 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 import RouteComparison from "../components/navigation/RouteComparison";
-import SafetyInsights from "../components/navigation/SafetyInsights";
+import NearbySafetyDisplay from "../components/navigation/NearbySafetyDisplay.jsx";
 import MapView from "../components/map/MapView.jsx";
 import RouteLayer from "../components/map/RouteLayer.jsx";
 import SearchBox from "../components/map/SearchBox.jsx";
 import { getFastestRoute, getSafestRoute } from "../services/routing";
 import { getCommunityReports, getSafetyData } from "../services/supabaseService";
 import { monitorRouteDeviation } from "../services/routeDeviationService";
+import { analyzeRouteSafetyData } from "../services/routeSafetyAnalysis";
 
 export default function SafeNavigation() {
   const [origin, setOrigin] = useState({ label: "", coords: null });
@@ -187,6 +188,12 @@ export default function SafeNavigation() {
     alert(`Initiating ${routeName} Protocol. Navigation active.`);
   };
 
+  const activeRoute = selectedRoute === "safest" ? (routes?.safest ?? routes?.fastest) : (routes?.fastest ?? routes?.safest);
+  const routeAnalysis = useMemo(() => {
+    if (!activeRoute) return null;
+    return analyzeRouteSafetyData(activeRoute, communityReports, safetyData);
+  }, [activeRoute, communityReports, safetyData]);
+
   const emptyStateLabel = useMemo(() => {
     if (safetyLoading) return "Loading live safety data...";
     if (safetyError) return safetyError;
@@ -318,7 +325,6 @@ export default function SafeNavigation() {
                   selectedRoute={selectedRoute}
                   onRouteSelect={setSelectedRoute}
                 />
-                <SafetyInsights routes={routes} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -397,6 +403,11 @@ export default function SafeNavigation() {
           </Card>
         </div>
       </div>
+
+      {/* Phase 2: Nearby Safety Information Display Below the Map */}
+      {routeAnalysis && (
+        <NearbySafetyDisplay analysisResult={routeAnalysis} />
+      )}
     </div>
   );
 }
