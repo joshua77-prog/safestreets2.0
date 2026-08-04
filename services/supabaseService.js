@@ -28,6 +28,10 @@ function normalizeCommunityReport(record) {
     ...record,
     latitude: Number(record.latitude),
     longitude: Number(record.longitude),
+    location: record.location || `Lat: ${Number(record.latitude).toFixed(4)}, Lon: ${Number(record.longitude).toFixed(4)}`,
+    description: record.intelligence_briefing || record.description || "",
+    report_type: record.report_type || record.issue_type || "Incident",
+    created_date: record.created_at || new Date().toISOString()
   };
 }
 
@@ -136,19 +140,24 @@ export async function getCommunityReports() {
 }
 
 export async function addCommunityReport(report) {
-  if (missingTables.has(PRIMARY_COMMUNITY_REPORTS_TABLE)) {
-    return null;
-  }
-
   try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      const err = new Error(authError?.message || "User authentication required to submit a report.");
+      console.error("Authentication error in addCommunityReport:", err);
+      throw err;
+    }
+
     const payload = {
+      user_id: user.id,
+      report_type: report.report_type,
+      category: report.category,
       latitude: Number(report.latitude),
       longitude: Number(report.longitude),
-      issue_type: report.issue_type,
-      description: report.description,
-      image_url: report.image_url ?? null,
-      reported_by: report.reported_by ?? "Guest",
-      created_at: report.created_at ?? new Date().toISOString(),
+      time_cycle: report.time_cycle,
+      safety_rating: Number(report.safety_rating),
+      intelligence_briefing: report.intelligence_briefing || report.description || ""
     };
 
     const { data, error } = await supabase
@@ -158,16 +167,14 @@ export async function addCommunityReport(report) {
       .single();
 
     if (error) {
-      if (error.status === 404 || error.code === 'PGRST301' || error.code === '42P01') {
-        missingTables.add(PRIMARY_COMMUNITY_REPORTS_TABLE);
-      }
-      return null;
+      console.error("Supabase community_reports insert error:", error);
+      throw error;
     }
 
     return normalizeCommunityReport(data);
-  } catch {
-    missingTables.add(PRIMARY_COMMUNITY_REPORTS_TABLE);
-    return null;
+  } catch (err) {
+    console.error("Failed to add community report:", err);
+    throw err;
   }
 }
 

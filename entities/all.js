@@ -2,6 +2,7 @@ import safetyReportsSeed from './safetyreports.json';
 import emergencyContactsSeed from './emergencycontact.json';
 import sosAlertSeed from './sosalert.json';
 import { supabase } from '../src/lib/supabase';
+import { getCommunityReports, addCommunityReport } from '../services/supabaseService';
 
 function readStore(key, seed) {
     const raw = localStorage.getItem(key);
@@ -263,6 +264,14 @@ export async function triggerSOS(alertType = 'manual_sos', message = '', contact
 
 export const SafetyReport = {
 	async list(order = '-created_date') {
+		try {
+			const supabaseReports = await getCommunityReports();
+			if (Array.isArray(supabaseReports) && supabaseReports.length > 0) {
+				return supabaseReports;
+			}
+		} catch (err) {
+			console.warn("Failed to fetch community reports from Supabase:", err);
+		}
 		const items = readStore('safety_reports', safetyReportsSeed);
 		const getTime = (item) => {
 			const raw = item?.created_date || item?.created_at || item?.timestamp;
@@ -273,6 +282,15 @@ export const SafetyReport = {
 		return [...items].sort((a, b) => getTime(b) - getTime(a));
 	},
 	async create(data) {
+		try {
+			const created = await addCommunityReport(data);
+			if (created) {
+				return created;
+			}
+		} catch (err) {
+			console.warn("Supabase report creation error in SafetyReport.create:", err);
+			throw err;
+		}
 		const items = readStore('safety_reports', safetyReportsSeed);
 		const now = new Date().toISOString();
 		const newItem = {

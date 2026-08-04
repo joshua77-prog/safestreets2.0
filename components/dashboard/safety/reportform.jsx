@@ -15,9 +15,12 @@ import {
   Clock,
   ThumbsUp,
   ThumbsDown,
-  Edit3
+  Edit3,
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "../../../src/lib/supabase";
 
 const POSITIVE_REPORTS = [
   "Brightly Lit Street",
@@ -70,6 +73,9 @@ export default function ReportForm({ onSubmit, onCancel }) {
   const [isOtherSelected, setIsOtherSelected] = useState(false);
   const [customReportText, setCustomReportText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [supabaseError, setSupabaseError] = useState("");
 
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
@@ -121,11 +127,120 @@ export default function ReportForm({ onSubmit, onCancel }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.location || !formData.report_type || !formData.time_of_day) return;
-    
+    setValidationError("");
+    setSupabaseError("");
+    setSuccessMessage("");
+
+    const reportType = positiveSelection ? "Positive Report" : negativeSelection ? "Negative Report" : "";
+    const category = positiveSelection
+      ? (positiveSelection === "Other" ? customReportText.trim() : positiveSelection)
+      : negativeSelection
+      ? (negativeSelection === "Other" ? customReportText.trim() : negativeSelection)
+      : "";
+
+    if (!reportType) {
+      setValidationError("Report type is required. Please select a Positive Report or Negative Report category.");
+      return;
+    }
+
+    if (!category) {
+      setValidationError("Category is required. Please select a valid report category.");
+      return;
+    }
+
+    if (formData.latitude === null || formData.latitude === undefined || isNaN(Number(formData.latitude))) {
+      setValidationError("Latitude coordinate is missing. Please click the target icon to lock your position.");
+      return;
+    }
+
+    if (formData.longitude === null || formData.longitude === undefined || isNaN(Number(formData.longitude))) {
+      setValidationError("Longitude coordinate is missing. Please click the target icon to lock your position.");
+      return;
+    }
+
+    if (!formData.time_of_day) {
+      setValidationError("Time cycle is required. Please select a time cycle.");
+      return;
+    }
+
+    if (!formData.safety_rating) {
+      setValidationError("Safety rating is required. Please select a rating (1-5).");
+      return;
+    }
+
     setSubmitting(true);
+
     try {
-      await onSubmit(formData);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        console.error("Supabase authentication error:", authError);
+        setSupabaseError("User authentication failed. Please make sure you are logged in.");
+        setSubmitting(false);
+        return;
+      }
+
+      const timeCycleMap = {
+        morning: "Morning",
+        afternoon: "Afternoon",
+        evening: "Evening",
+        night: "Night",
+        late_night: "Critical Hours",
+        Morning: "Morning",
+        Afternoon: "Afternoon",
+        Evening: "Evening",
+        Night: "Night",
+        "Critical Hours": "Critical Hours"
+      };
+
+      const payload = {
+        user_id: user.id,
+        report_type: reportType,
+        category: category,
+        latitude: Number(formData.latitude),
+        longitude: Number(formData.longitude),
+        time_cycle: timeCycleMap[formData.time_of_day] || formData.time_of_day,
+        safety_rating: Number(formData.safety_rating),
+        intelligence_briefing: formData.description || "",
+      };
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from("community_reports")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Supabase error inserting into community_reports table:", insertError);
+        setSupabaseError("Unable to save report to database: " + (insertError.message || "Unknown Supabase error"));
+        setSubmitting(false);
+        return;
+      }
+
+      console.log("Report stored in community_reports table successfully:", insertedData);
+
+      setSuccessMessage("Observation report saved successfully!");
+
+      setFormData({
+        location: "",
+        latitude: null,
+        longitude: null,
+        safety_rating: 3,
+        report_type: "",
+        description: "",
+        time_of_day: ""
+      });
+      setPositiveSelection("");
+      setNegativeSelection("");
+      setIsOtherSelected(false);
+      setCustomReportText("");
+
+      if (onSubmit) {
+        await onSubmit(insertedData || payload);
+      }
+    } catch (err) {
+      console.error("Unexpected error submitting report:", err);
+      setSupabaseError("An unexpected error occurred: " + (err.message || "Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -152,6 +267,26 @@ export default function ReportForm({ onSubmit, onCancel }) {
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
         {/* Scrollable Middle Body */}
         <div className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar space-y-6">
+          {validationError && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-800 text-xs font-bold animate-in fade-in">
+              <AlertCircle className="w-5 h-5 shrink-0 text-amber-600" />
+              <span>{validationError}</span>
+            </div>
+          )}
+
+          {supabaseError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
+              <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
+              <span>{supabaseError}</span>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3 text-emerald-800 text-xs font-bold animate-in fade-in">
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+              <span>{successMessage}</span>
+            </div>
+          )}
           <div className="grid md:grid-cols-2 gap-6 md:gap-8">
             {/* Left Column */}
             <div className="space-y-6">

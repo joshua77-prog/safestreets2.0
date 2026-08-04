@@ -40,13 +40,14 @@ export default function SafetyReports() {
     }
   };
 
-  const handleSubmitReport = async (reportData) => {
+  const handleSubmitReport = async () => {
     try {
-      await SafetyReport.create(reportData);
-      setShowReportForm(false);
-      loadReports();
+      await loadReports();
+      setTimeout(() => {
+        setShowReportForm(false);
+      }, 1200);
     } catch (error) {
-      console.error("Error submitting report:", error);
+      console.error("Error updating report list:", error);
     }
   };
 
