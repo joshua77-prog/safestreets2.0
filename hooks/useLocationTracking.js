@@ -196,6 +196,9 @@ export function useLocationTracking() {
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          console.log("Latitude:", position.coords.latitude);
+          console.log("Longitude:", position.coords.longitude);
+          console.log("Accuracy:", position.coords.accuracy);
           const locData = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,

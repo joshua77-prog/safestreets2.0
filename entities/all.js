@@ -475,6 +475,10 @@ export const SOSAlert = {
 					localItems.forEach((item) => {
 						if (!dbMap.has(item.id)) {
 							dbMap.set(item.id, item);
+						} else {
+							const existing = dbMap.get(item.id);
+							if (item.status) existing.status = item.status;
+							if (item.resolved_at) existing.resolved_at = item.resolved_at;
 						}
 					});
 
@@ -501,11 +505,27 @@ export const SOSAlert = {
 	async update(id, updates) {
 		const userId = await getAuthUserId();
 
+		// Update local store so UI state updates immediately and resolves active alert
+		const items = readStore('sos_alerts', sosAlertSeed);
+		const idx = items.findIndex((i) => i.id === id);
+		let updatedItem = null;
+		if (idx >= 0) {
+			items[idx] = { ...items[idx], ...updates };
+			writeStore('sos_alerts', items);
+			updatedItem = items[idx];
+		} else {
+			updatedItem = { id, ...updates };
+		}
+
 		if (userId && id) {
 			try {
+				// Supabase sos_alerts table contains (id, user_id, latitude, longitude, created_at).
+				// Only send database columns to Supabase to prevent HTTP 400 (PGRST204) schema errors for non-existent columns (status/resolved_at).
 				const payload = {};
-				if (updates.status !== undefined) payload.status = updates.status;
-				if (updates.resolved_at !== undefined) payload.resolved_at = updates.resolved_at;
+				if (updates.latitude !== undefined) payload.latitude = updates.latitude;
+				if (updates.longitude !== undefined) payload.longitude = updates.longitude;
+				if (updates.address !== undefined) payload.address = updates.address;
+				if (updates.location !== undefined) payload.location = updates.location;
 
 				if (Object.keys(payload).length > 0) {
 					const { error } = await supabase
@@ -515,9 +535,7 @@ export const SOSAlert = {
 						.eq('user_id', userId);
 
 					if (error) {
-						console.warn("Supabase sos_alerts update error:", error);
-					} else {
-						console.log("Updated sos_alert status in Supabase:", { id, updates });
+						console.warn("Supabase sos_alerts update notice:", error.message);
 					}
 				}
 			} catch (err) {
@@ -525,14 +543,7 @@ export const SOSAlert = {
 			}
 		}
 
-		const items = readStore('sos_alerts', sosAlertSeed);
-		const idx = items.findIndex((i) => i.id === id);
-		if (idx >= 0) {
-			items[idx] = { ...items[idx], ...updates };
-			writeStore('sos_alerts', items);
-			return items[idx];
-		}
-		return null;
+		return updatedItem;
 	}
 };
 

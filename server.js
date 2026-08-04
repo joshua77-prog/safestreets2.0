@@ -240,23 +240,23 @@ app.post("/api/sos", async (req, res) => {
     const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
     console.log(`[SOS] Step 8 ✔ Google Maps URL: ${googleMapsUrl}`);
     // ── Step 8.5: Send Emergency Email ───────────────────────────────
-console.log("[SOS] Step 8.5 — Sending emergency email...");
+    console.log("[SOS] Step 8.5 — Sending emergency email...");
 
-const emailResult = await sendEmergencyEmail({
-    to: primaryContact.email,
-    contactName: primaryContact.full_name,
-    userName: userRecord?.full_name || "Safe Streets User",
-    userPhone: userRecord?.phone || "Not Available",
-    mapsUrl: googleMapsUrl,
-    latitude,
-    longitude
-});
+    const emailResult = await sendEmergencyEmail({
+      to: primaryContact.email,
+      contactName: primaryContact.full_name || "Emergency Contact",
+      userName: userRecord?.full_name || "Safe Streets User",
+      userPhone: userRecord?.phone || "Not Available",
+      mapsUrl: googleMapsUrl,
+      latitude,
+      longitude
+    });
 
-if (emailResult.success) {
-    console.log("[SOS] Step 8.5 ✔ Email sent successfully.");
-} else {
-    console.warn("[SOS] Step 8.5 ✘ Email failed:", emailResult.error);
-}
+    if (emailResult.success) {
+      console.log("[SOS] Step 8.5 ✔ Email sent successfully.");
+    } else {
+      console.warn("[SOS] Step 8.5 ✘ Email failed:", emailResult.error);
+    }
 
     // ── Step 9: Call Exotel Voice API using emergency contact's number ─────
     console.log(`[SOS] Step 9 — Dispatching Exotel call to emergency contact: ${emergencyContactPhone}`);
