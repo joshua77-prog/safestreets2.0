@@ -101,23 +101,37 @@ export function analyzeRouteSafetyData(route, communityReports = [], safetyData 
           const score = Number(item.safety_score ?? item.safetyScore ?? 70);
           const computedRating = Math.max(1, Math.min(5, Math.round(score / 20)));
 
+          const rawObj = item.raw || item;
+          const crime_count = Number(item.crime_count ?? rawObj.crime_count ?? item.crimeCount ?? rawObj.crimeCount ?? item.crime_rate ?? rawObj.crime_rate ?? item.crimes ?? rawObj.crimes ?? 0);
+          const crime_type = item.crime_type ?? rawObj.crime_type ?? item.category ?? rawObj.category ?? item.report_type ?? rawObj.report_type ?? "Other";
+          const time_of_day = item.time_of_day ?? rawObj.time_of_day ?? item.time_cycle ?? rawObj.time_cycle ?? "Anytime";
+          const lighting_score = Number(item.lighting_score ?? rawObj.lighting_score ?? item.lightingScore ?? rawObj.lightingScore ?? item.lighting ?? rawObj.lighting ?? 5);
+          const crowd_density = item.crowd_density ?? rawObj.crowd_density ?? item.crowdDensity ?? rawObj.crowdDensity ?? "Medium";
+          const incident_timestamp = item.incident_timestamp ?? rawObj.incident_timestamp ?? item.created_at ?? rawObj.created_at;
+
+          const policeDistRaw = item.police_station_distance ?? rawObj.police_station_distance ?? item.police_station_distance_km ?? rawObj.police_station_distance_km ?? item.policeStationDistanceKm ?? rawObj.policeStationDistanceKm ?? item.police_distance ?? rawObj.police_distance;
+          const police_station_distance = policeDistRaw != null && policeDistRaw !== "" ? Number(policeDistRaw) : null;
+          const police_station_distance_km = police_station_distance !== null ? (police_station_distance <= 50 ? police_station_distance : police_station_distance / 1000) : null;
+
           matchedSafetyAnalysisMap.set(itemKey, {
             id: item.id || itemKey,
-            city: item.city || item.location_name || item.area || "Area Sentinel",
-            area: item.area || item.city || "Sector",
+            city: item.city || rawObj.city || item.location_name || item.area || "Area Sentinel",
+            area: item.area || rawObj.area || item.city || "Sector",
             category: item.area ? `Sector: ${item.area}` : item.city ? `City: ${item.city}` : "Historical Safety Zone",
             latitude: itemLat,
             longitude: itemLon,
-            safety_rating: computedRating,
-            safety_score: score,
-            crime_count: Number(item.crime_count ?? item.crimeCount ?? 0),
-            lighting_score: Number(item.lighting_score ?? item.lightingScore ?? 5),
-            police_station_distance_km: Number(item.police_station_distance_km ?? item.policeStationDistanceKm ?? 0),
-            crowd_density: Number(item.crowd_density ?? item.crowdDensity ?? 0),
-            time_cycle: "Historical Record",
-            intelligence_briefing: `Historical Crime Count: ${item.crime_count ?? 0}, Lighting Score: ${item.lighting_score ?? 0}/10, Police Station Distance: ${item.police_station_distance_km ?? 0} km`,
+            crime_count,
+            crime_type,
+            time_of_day,
+            lighting_score,
+            police_station_distance,
+            police_station_distance_km,
+            crowd_density,
+            incident_timestamp,
+            time_cycle: time_of_day || "Historical Record",
+            intelligence_briefing: `Historical Crime: ${crime_type} (${crime_count} incident/s), Lighting: ${lighting_score}/10, Police Station: ${police_station_distance_km !== null ? police_station_distance_km.toFixed(1) + ' km' : 'N/A'}, Density: ${crowd_density}`,
             distance_from_route: distMeters,
-            raw: item
+            raw: rawObj
           });
         }
       }

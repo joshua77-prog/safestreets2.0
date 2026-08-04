@@ -13,7 +13,6 @@ function normalizeSafetyRecord(record) {
     ...record,
     latitude: Number(record.latitude),
     longitude: Number(record.longitude),
-    safety_score: Number(record.safety_score ?? record.safetyScore ?? 0),
     crime_count: Number(record.crime_count ?? record.crimeCount ?? 0),
     lighting_score: Number(record.lighting_score ?? record.lightingScore ?? 0),
     police_station_distance_km: Number(record.police_station_distance_km ?? record.policeStationDistanceKm ?? 0),
@@ -81,7 +80,7 @@ async function safeQuery(tableName, queryFn) {
 export async function getSafetyData() {
   try {
     const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
-      builder.select("*").order("safety_score", { ascending: false })
+      builder.select("*").order("crime_count", { ascending: false })
     );
 
     if (data.length > 0) {
@@ -93,9 +92,11 @@ export async function getSafetyData() {
 }
 
 export async function getSafetyDataByCity(city) {
+  if (!city) return getSafetyData();
+
   try {
     const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
-      builder.select("*").eq("city", city).order("safety_score", { ascending: false })
+      builder.select("*").eq("city", city).order("crime_count", { ascending: false })
     );
 
     if (data.length > 0) {
