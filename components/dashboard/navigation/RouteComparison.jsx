@@ -1,3 +1,1 @@
-export { default } from './routecomparision.js';
-
-
+export { default } from './routecomparision.jsx';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRouteSummary, toLeafletPath } from './routing.js';
+import { buildRouteSummary, toLeafletPath, evaluateCandidateRoute, evaluateAllRoutes } from './routing.js';
 
 test('converts OSRM coordinates to Leaflet path format', () => {
   const path = toLeafletPath({
@@ -39,36 +39,46 @@ test('formats route metadata from an OSRM response', () => {
   ]);
 });
 
-test('scores routes using nearby safety context', () => {
-  const summary = buildRouteSummary(
+test('scores candidate route using nearby safety context and community reports', () => {
+  const candidate = evaluateCandidateRoute(
     {
-      routes: [
-        {
-          distance: 2100,
-          duration: 420,
-          geometry: {
-            type: 'LineString',
-            coordinates: [[77.5946, 12.9716], [77.602, 12.975]],
-          },
-        },
-      ],
+      distance: 2100,
+      duration: 420,
+      geometry: {
+        type: 'LineString',
+        coordinates: [[77.5946, 12.9716], [77.602, 12.975]],
+      },
     },
     0,
-    'safe',
     {
       safetyData: [
         {
-          safety_score: 9,
+          id: 's1',
+          latitude: 12.9716,
+          longitude: 77.5946,
           crime_count: 2,
-          lighting_score: 8,
-          police_station_distance_km: 1,
-          crowd_density: 4,
+          lighting_score: 9,
+          police_station_distance_km: 0.5,
+          crowd_density: 'High',
         },
       ],
-      communityReports: [{ latitude: 12.972, longitude: 77.598 }],
+      communityReports: [
+        {
+          id: 'c1',
+          report_type: 'Positive Observation',
+          category: 'Police Presence',
+          latitude: 12.972,
+          longitude: 77.595,
+          safety_rating: 5,
+        },
+      ],
     }
   );
 
-  assert.equal(summary.safetyScore, 87);
-  assert.equal(summary.riskLevel, 'Low');
+  assert.equal(candidate.distance, '2.1 km');
+  assert.equal(candidate.duration, '7 mins');
+  assert.equal(typeof candidate.safetyScore, 'number');
+  assert.equal(candidate.historicalReportCount, 1);
+  assert.equal(candidate.communityReportCount, 1);
+  assert.equal(candidate.routeId, 'route-1');
 });

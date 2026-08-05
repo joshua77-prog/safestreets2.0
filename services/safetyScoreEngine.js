@@ -55,12 +55,13 @@ const RATING_MULTIPLIERS = {
 
 export function getDistanceMultiplier(distMeters) {
   const dist = Number(distMeters) || 0;
-  if (dist <= 100) return 1.0;
-  if (dist <= 300) return 0.9;
-  if (dist <= 500) return 0.7;
-  if (dist <= 750) return 0.5;
-  if (dist <= 1000) return 0.3;
-  return 0.0;
+  if (dist <= 50) return 1.00;
+  if (dist <= 100) return 0.90;
+  if (dist <= 250) return 0.75;
+  if (dist <= 500) return 0.50;
+  if (dist <= 750) return 0.30;
+  if (dist <= 1000) return 0.10;
+  return 0.00;
 }
 
 const TIME_CYCLES = ["Morning", "Afternoon", "Evening", "Night", "Critical Hours"];
@@ -384,7 +385,10 @@ export function calculateSafetyScoreEngine(analysisResult) {
       const crowdDensityRisk = getCrowdDensityRisk(crowdDensity);
       const timeMatchRisk = getTimeMatchRisk(timeOfDay, currentTimeCycle);
 
-      const recordRisk = crimeCountRisk + crimeTypeRisk + lightingRisk + policeDistanceRisk + crowdDensityRisk + timeMatchRisk;
+      const distMeters = item.distance_from_route ?? rawObj.distance_from_route ?? 0;
+      const distanceWeight = getDistanceMultiplier(distMeters);
+
+      const recordRisk = (crimeCountRisk + crimeTypeRisk + lightingRisk + policeDistanceRisk + crowdDensityRisk + timeMatchRisk) * distanceWeight;
       sumHistoricalRecordRisk += recordRisk;
 
       // Aggregates for fallback positive/negative insights
@@ -524,13 +528,15 @@ export function calculateSafetyScoreEngine(analysisResult) {
   });
 
   const finalCommunityRisk = Math.max(0, communityRiskTotal);
+  const totalDangerPenalty = Number(analysisResult?.totalDangerPenalty ?? 0);
+  const penetratedDangerZones = analysisResult?.penetratedDangerZones ?? [];
 
-  // STEP 5: TOTAL RISK COMBINATION (40% Historical + 60% Community)
-  const totalRisk = (finalHistoricalRisk * 0.4) + (finalCommunityRisk * 0.6);
+  // STEP 5: TOTAL RISK COMBINATION (40% Historical + 60% Community + Danger Zone Penetration Penalty)
+  const totalRisk = (finalHistoricalRisk * 0.4) + (finalCommunityRisk * 0.6) + totalDangerPenalty;
 
-  // STEP 6: FINAL SAFETY SCORE = 100 - TOTAL RISK (Clamped 0 to 100)
+  // STEP 6: FINAL SAFETY SCORE = 100 - TOTAL RISK (Clamped 0 to 100 with 1 decimal place precision)
   const unclampedFinalScore = baseScore - totalRisk;
-  const finalScore = Math.max(0, Math.min(100, Math.round(unclampedFinalScore)));
+  const finalScore = Math.max(0, Math.min(100, Math.round(unclampedFinalScore * 10) / 10));
 
   // NORMALIZED DISPLAY VALUES
   const MAX_EXPECTED_HISTORICAL_RISK = 250;
@@ -541,6 +547,7 @@ export function calculateSafetyScoreEngine(analysisResult) {
   console.log(`Base Score: ${baseScore}`);
   console.log(`Historical Risk (40%): ${finalHistoricalRisk.toFixed(1)} (Display: ${historicalRiskDisplay}/100)`);
   console.log(`Community Risk (60%): ${finalCommunityRisk.toFixed(1)} (Display: ${communityRiskDisplay}/100)`);
+  console.log(`Danger Zone Penalty: ${totalDangerPenalty.toFixed(1)} (Penetrated: ${penetratedDangerZones.length} zones)`);
   console.log(`Total Risk: ${totalRisk.toFixed(1)}`);
   console.log(`Final Safety Score: ${finalScore}`);
   console.log(`--------------------------------\n`);

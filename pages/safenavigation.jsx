@@ -20,7 +20,7 @@ import SafetyScoreCard from "../components/navigation/SafetyScoreCard.jsx";
 import MapView from "../components/map/MapView.jsx";
 import RouteLayer from "../components/map/RouteLayer.jsx";
 import SearchBox from "../components/map/SearchBox.jsx";
-import { getFastestRoute, getSafestRoute } from "../services/routing";
+import { evaluateAllRoutes, getFastestRoute, getSafestRoute } from "../services/routing";
 import { getCommunityReports, getSafetyData } from "../services/supabaseService";
 import { monitorRouteDeviation } from "../services/routeDeviationService";
 import { analyzeRouteSafetyData } from "../services/routeSafetyAnalysis";
@@ -113,7 +113,7 @@ export default function SafeNavigation() {
   }, []);
 
   useEffect(() => {
-    if (!origin.coords || !destination.coords || !routes?.selectedRoute) return;
+    if (!origin.coords || !destination.coords || !routes?.safest) return;
 
     const watchId = navigator.geolocation?.watchPosition(
       (position) => {
@@ -158,15 +158,9 @@ export default function SafeNavigation() {
         communityReports,
       };
 
-      const [fastestRoute, safestRoute] = await Promise.all([
-        getFastestRoute(origin, destination, safetyContext),
-        getSafestRoute(origin, destination, safetyContext),
-      ]);
-
-      setRoutes({
-        fastest: fastestRoute,
-        safest: safestRoute,
-      });
+      const routeResults = await evaluateAllRoutes(origin, destination, safetyContext);
+      setRoutes(routeResults);
+      setSelectedRoute("safest"); // Default to safest route
     } catch (error) {
       console.error("Routing error:", error);
     } finally {
@@ -190,16 +184,19 @@ export default function SafeNavigation() {
     alert(`Initiating ${routeName} Protocol. Navigation active.`);
   };
 
-  const activeRoute = selectedRoute === "safest" ? (routes?.safest ?? routes?.fastest) : (routes?.fastest ?? routes?.safest);
+  const activeRoute = selectedRoute === "fastest" 
+    ? (routes?.fastest ?? routes?.safest) 
+    : (routes?.safest ?? routes?.fastest);
+  
   const routeAnalysis = useMemo(() => {
     if (!activeRoute) return null;
-    return analyzeRouteSafetyData(activeRoute, communityReports, safetyData);
+    return activeRoute.routeAnalysis || analyzeRouteSafetyData(activeRoute, communityReports, safetyData);
   }, [activeRoute, communityReports, safetyData]);
 
   const safetyScoreResult = useMemo(() => {
-    if (!routeAnalysis) return null;
-    return calculateSafetyScoreEngine(routeAnalysis);
-  }, [routeAnalysis]);
+    if (!activeRoute) return null;
+    return activeRoute.scoreResult || (routeAnalysis ? calculateSafetyScoreEngine(routeAnalysis) : null);
+  }, [activeRoute, routeAnalysis]);
 
   const emptyStateLabel = useMemo(() => {
     if (safetyLoading) return "Loading live safety data...";
@@ -385,8 +382,9 @@ export default function SafeNavigation() {
                   <RouteLayer
                     fastestRoute={routes?.fastest?.path}
                     safestRoute={routes?.safest?.path}
-                    safetyData={safetyData}
                     selectedRoute={selectedRoute}
+                    isIdentical={routes?.isIdentical}
+                    dangerZones={routes?.dangerZones}
                   />
                 </MapView>
               </div>
@@ -423,7 +421,3 @@ export default function SafeNavigation() {
     </div>
   );
 }
-
- 
-
-

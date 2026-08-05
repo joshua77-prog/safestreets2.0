@@ -2,6 +2,7 @@ import React from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import { Icon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { toLeafletPath } from '../../services/routing.js';
 
 // Fix for default markers in react-leaflet
 delete Icon.Default.prototype._getIconUrl;
@@ -29,31 +30,29 @@ const endIcon = new Icon({
   shadowSize: [41, 41]
 });
 
-export default function MapIntegration({ routes, selectedRoute, onRouteSelect }) {
-  // Default center (can be made dynamic based on routes)
-  const center = [40.7128, -74.0060]; // New York City as default
+export default function MapIntegration({ routes = {}, selectedRoute = "safest", onRouteSelect }) {
+  const getCoordinates = (route) => {
+    if (!route) return [];
+    if (Array.isArray(route.path) && route.path.length > 0) {
+      return route.path;
+    }
+    if (route.geometry) {
+      return toLeafletPath(route.geometry);
+    }
+    if (route.rawRoute?.geometry) {
+      return toLeafletPath(route.rawRoute.geometry);
+    }
+    return [];
+  };
+
+  const safestCoords = getCoordinates(routes?.safest);
+  const fastestCoords = getCoordinates(routes?.fastest);
+
+  const center = safestCoords?.[0] || fastestCoords?.[0] || [12.9716, 77.5946];
   const zoom = 13;
 
-  // Colors for different routes
-  const routeColors = {
-    fastest: '#f97316', // orange
-    safest: '#10b981'   // emerald
-  };
-
-  // Function to parse route path into coordinates (assuming format like "Start -> Point A -> Point B -> End")
-  const parseRouteCoordinates = (path) => {
-    // This is a simplified parser - in real implementation, you'd have actual coordinates
-    // For demo purposes, we'll create mock coordinates
-    const points = path.split(' -> ');
-    const coordinates = points.map((point, index) => {
-      // Mock coordinates - replace with real geocoding
-      return [
-        center[0] + (Math.random() - 0.5) * 0.1 + index * 0.01,
-        center[1] + (Math.random() - 0.5) * 0.1 + index * 0.01
-      ];
-    });
-    return coordinates;
-  };
+  const showFastest = selectedRoute === "fastest" || selectedRoute === "compare";
+  const showSafest = selectedRoute === "safest" || selectedRoute === "compare";
 
   return (
     <div className="h-96 w-full rounded-lg overflow-hidden border border-slate-200">
@@ -68,63 +67,62 @@ export default function MapIntegration({ routes, selectedRoute, onRouteSelect })
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Render routes */}
-        {Object.entries(routes).map(([routeType, route]) => {
-          const coordinates = parseRouteCoordinates(route.path);
-          const isSelected = selectedRoute === routeType;
+        {showFastest && fastestCoords.length > 0 && (
+          <>
+            <Polyline
+              positions={fastestCoords}
+              pathOptions={{
+                color: '#3B82F6', // Blue
+                weight: selectedRoute === 'fastest' ? 6 : 4,
+                opacity: 0.9,
+              }}
+              eventHandlers={{
+                click: () => onRouteSelect?.('fastest')
+              }}
+            />
+            <Marker position={fastestCoords[0]} icon={startIcon}>
+              <Popup>Fast Route Start</Popup>
+            </Marker>
+            <Marker position={fastestCoords[fastestCoords.length - 1]} icon={endIcon}>
+              <Popup>Fast Route End</Popup>
+            </Marker>
+          </>
+        )}
 
-          return (
-            <React.Fragment key={routeType}>
-              <Polyline
-                positions={coordinates}
-                pathOptions={{
-                  color: routeColors[routeType],
-                  weight: isSelected ? 6 : 4,
-                  opacity: isSelected ? 1 : 0.7,
-                  dashArray: isSelected ? null : '5, 10'
-                }}
-                eventHandlers={{
-                  click: () => onRouteSelect(routeType)
-                }}
-              />
-              {/* Start marker */}
-              <Marker position={coordinates[0]} icon={startIcon}>
-                <Popup>
-                  <div className="text-sm">
-                    <strong>Start:</strong> {route.path.split(' -> ')[0]}
-                  </div>
-                </Popup>
-              </Marker>
-              {/* End marker */}
-              <Marker position={coordinates[coordinates.length - 1]} icon={endIcon}>
-                <Popup>
-                  <div className="text-sm">
-                    <strong>End:</strong> {route.path.split(' -> ').pop()}
-                    <br />
-                    <strong>Duration:</strong> {route.duration}
-                    <br />
-                    <strong>Distance:</strong> {route.distance}
-                    <br />
-                    <strong>Safety Score:</strong> {route.safetyScore}%
-                  </div>
-                </Popup>
-              </Marker>
-            </React.Fragment>
-          );
-        })}
+        {showSafest && safestCoords.length > 0 && (
+          <>
+            <Polyline
+              positions={safestCoords}
+              pathOptions={{
+                color: '#10B981', // Green
+                weight: selectedRoute === 'safest' ? 6 : 4,
+                opacity: 0.9,
+              }}
+              eventHandlers={{
+                click: () => onRouteSelect?.('safest')
+              }}
+            />
+            <Marker position={safestCoords[0]} icon={startIcon}>
+              <Popup>Safe Route Start</Popup>
+            </Marker>
+            <Marker position={safestCoords[safestCoords.length - 1]} icon={endIcon}>
+              <Popup>Safe Route End</Popup>
+            </Marker>
+          </>
+        )}
       </MapContainer>
 
       {/* Route Legend */}
       <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg z-10">
-        <h4 className="text-sm font-semibold text-slate-900 mb-2">Routes</h4>
+        <h4 className="text-sm font-semibold text-slate-900 mb-2 font-black">Routes</h4>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-1 bg-orange-500 rounded"></div>
-            <span className="text-slate-700">Fastest Route</span>
+            <div className="w-4 h-1 bg-blue-500 rounded"></div>
+            <span className="text-slate-700 font-bold">Fastest Route (Blue)</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-1 bg-emerald-500 rounded"></div>
-            <span className="text-slate-700">Safest Route</span>
+            <span className="text-slate-700 font-bold">Safest Route (Green)</span>
           </div>
         </div>
       </div>
