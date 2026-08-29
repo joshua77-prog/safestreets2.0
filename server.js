@@ -3,7 +3,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
-import { callEmergencyContact } from "./services/exotelService.js";
+import { callEmergencyContact as callEmergencyContactTwilio } from "./services/twilioService.js";
+import { callEmergencyContact as callEmergencyContactExotel } from "./services/exotelService.js";
 import { sendEmergencyEmail } from "./services/emailService.js";
 
 dotenv.config();
@@ -258,30 +259,48 @@ app.post("/api/sos", async (req, res) => {
       console.warn("[SOS] Step 8.5 ✘ Email failed:", emailResult.error);
     }
 
-    // ── Step 9: Call Exotel Voice API using emergency contact's number ─────
-    console.log(`[SOS] Step 9 — Dispatching Exotel call to emergency contact: ${emergencyContactPhone}`);
-    const exotelResult = await callEmergencyContact(emergencyContactPhone);
+    // ── Step 9: Call Twilio Voice API using emergency contacts ─────────────
+    let twilioResult = null;
+    let voiceSuccess = false;
+    let dispatchedContact = primaryContact;
 
-    if (exotelResult.success) {
-      console.log(`[SOS] Step 9 ✔ Exotel call dispatched successfully.`);
-    } else {
-      console.warn(`[SOS] Step 9 ✘ Exotel call issue: ${exotelResult.error}`);
+    const sosUserName = userRecord?.full_name || "A Safe Streets user";
+
+    // Prioritize primary contact if set, then try available contacts
+    const sortedContacts = [...emergencyContacts].sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0));
+
+    for (const contact of sortedContacts) {
+      if (!contact.number) continue;
+      console.log(`[SOS] Step 9 — Attempting Twilio call to: ${contact.full_name || "Contact"} (${contact.number}) for user: ${sosUserName}`);
+      const result = await callEmergencyContactTwilio(contact.number, sosUserName);
+      twilioResult = result;
+      dispatchedContact = contact;
+
+      if (result.success) {
+        voiceSuccess = true;
+        console.log(`[SOS] Step 9 ✔ Twilio call dispatched successfully to ${contact.full_name} (${contact.number}). Call SID: ${result.callSid}`);
+        break;
+      } else {
+        console.warn(`[SOS] Step 9 ✘ Twilio call to ${contact.full_name} (${contact.number}) notice: ${result.error}`);
+      }
     }
 
-    // ── Step 10: Return success response ──────────────────────────────────
+    // ── Step 10: Return response ──────────────────────────────────
     return res.json({
-      success: true,
-      message: "SOS alert recorded and emergency contact voice call dispatched.",
+      success: voiceSuccess,
+      message: voiceSuccess
+        ? `SOS alert recorded and emergency contact voice call dispatched to ${dispatchedContact.full_name || dispatchedContact.number}.`
+        : `SOS alert recorded, but voice call failed: ${twilioResult?.error || "Unable to dispatch call."}`,
       user: userRecord ? { id: userRecord.id, full_name: userRecord.full_name } : { id: userId },
       emergencyContact: {
-        full_name: primaryContact.full_name,
-        number: emergencyContactPhone,
-        relationship: primaryContact.relationship
+        full_name: dispatchedContact.full_name,
+        number: dispatchedContact.number,
+        relationship: dispatchedContact.relationship
       },
       alert: createdAlert,
       location: { latitude, longitude, address },
       googleMapsUrl,
-      exotel: exotelResult,
+      twilio: twilioResult,
       email: emailResult
     });
 
