@@ -250,7 +250,7 @@ export default function RouteComparison({ routes, selectedRoute, onRouteSelect }
           <div className="p-3.5 rounded-2xl bg-white/90 border border-emerald-200 text-xs font-semibold text-slate-800 flex items-center gap-2.5 shadow-sm">
             <Info className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              Compared with the Fast Route, choosing the Safe Route increases the Safety Score by <strong className="text-emerald-700 font-black">{scoreIncrease} points</strong> while adding only <strong className="text-slate-900 font-black">{timeAddedMinutes} minutes</strong> to the journey.
+              {recommendation?.comparisonText || `Compared with the Fast Route, choosing the Safe Route increases the Safety Score by ${scoreIncrease} points while adding only ${timeAddedMinutes} minutes to the journey.`}
             </span>
           </div>
         )}

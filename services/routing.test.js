@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRouteSummary, toLeafletPath, evaluateCandidateRoute, evaluateAllRoutes } from './routing.js';
+import { buildRouteSummary, toLeafletPath, evaluateCandidateRoute } from './routing.js';
 
 test('converts OSRM coordinates to Leaflet path format', () => {
   const path = toLeafletPath({
@@ -17,8 +17,8 @@ test('converts OSRM coordinates to Leaflet path format', () => {
   ]);
 });
 
-test('formats route metadata from an OSRM response', () => {
-  const summary = buildRouteSummary({
+test('formats route metadata from an OSRM response', async () => {
+  const summary = await buildRouteSummary({
     routes: [
       {
         distance: 2100,
@@ -39,8 +39,8 @@ test('formats route metadata from an OSRM response', () => {
   ]);
 });
 
-test('scores candidate route using nearby safety context and community reports', () => {
-  const candidate = evaluateCandidateRoute(
+test('scores candidate route using nearby safety context and community reports', async () => {
+  const candidate = await evaluateCandidateRoute(
     {
       distance: 2100,
       duration: 420,

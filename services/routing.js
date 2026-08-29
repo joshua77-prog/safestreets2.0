@@ -1,57 +1,114 @@
-import { analyzeRouteSafetyData, buildDangerZones, calculateDangerPenalties } from "./routeSafetyAnalysis.js";
-import { calculateSafetyScoreEngine } from "./safetyScoreEngine.js";
+import {
+  analyzeRouteSafetyData,
+  buildDangerZones,
+  calculateDangerPenalties
+} from "./routeSafetyAnalysis.js";
+
+import {
+  calculateSafetyScoreEngine
+} from "./safetyScoreEngine.js";
+
+
+// ============================================================
+// COORDINATE NORMALIZATION
+// ============================================================
 
 function normalizeCoords(value) {
   if (!value) return null;
 
-  if (Array.isArray(value)) {
-    return { lat: Number(value[0]), lon: Number(value[1]) };
+  if (Array.isArray(value) && value.length >= 2) {
+    return {
+      lat: Number(value[0]),
+      lon: Number(value[1])
+    };
   }
 
-  if (value.coords) {
-    return { lat: Number(value.coords[0]), lon: Number(value.coords[1]) };
+  if (value.coords && Array.isArray(value.coords) && value.coords.length >= 2) {
+    return {
+      lat: Number(value.coords[0]),
+      lon: Number(value.coords[1])
+    };
   }
 
-  if (value.lat != null && value.lon != null) {
-    return { lat: Number(value.lat), lon: Number(value.lon) };
+  const lat = value.lat ?? value.latitude;
+  const lon = value.lon ?? value.lng ?? value.longitude;
+
+  if (lat != null && lon != null && !isNaN(Number(lat)) && !isNaN(Number(lon))) {
+    return {
+      lat: Number(lat),
+      lon: Number(lon)
+    };
   }
 
   return null;
 }
 
+
+// ============================================================
+// HAVERSINE DISTANCE
+// ============================================================
+
 function haversineDistanceKm(from, to) {
-  if (!from || !to) return Number.POSITIVE_INFINITY;
+  if (!from || !to) {
+    return Number.POSITIVE_INFINITY;
+  }
 
   const earthRadiusKm = 6371;
+
   const latDelta = ((to.lat - from.lat) * Math.PI) / 180;
   const lonDelta = ((to.lon - from.lon) * Math.PI) / 180;
+
   const a =
     Math.sin(latDelta / 2) ** 2 +
-    Math.cos((from.lat * Math.PI) / 180) * Math.cos((to.lat * Math.PI) / 180) * Math.sin(lonDelta / 2) ** 2;
+    Math.cos((from.lat * Math.PI) / 180) *
+      Math.cos((to.lat * Math.PI) / 180) *
+      Math.sin(lonDelta / 2) ** 2;
 
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
 }
 
+
+// ============================================================
+// CONVERT GEOJSON TO LEAFLET PATH
+// ============================================================
+
 export function toLeafletPath(geometry) {
   if (!geometry) return [];
 
-  const coordinates = geometry.coordinates ?? geometry?.features?.[0]?.geometry?.coordinates ?? [];
+  const coordinates =
+    geometry.coordinates ??
+    geometry?.features?.[0]?.geometry?.coordinates ??
+    [];
+
   return coordinates.map(([lon, lat]) => [lat, lon]);
 }
 
-/**
- * Evaluates a single candidate route against nearby safety records, community reports, and dynamic danger zones
- */
-export function evaluateCandidateRoute(route, index, safetyContext = {}) {
-  const geometry = route.geometry ?? route?.features?.[0]?.geometry ?? null;
+
+// ============================================================
+// EVALUATE SINGLE CANDIDATE ROUTE
+// ============================================================
+
+export async function evaluateCandidateRoute(
+  route,
+  index,
+  safetyContext = {}
+) {
+  const geometry =
+    route.geometry ??
+    route?.features?.[0]?.geometry ??
+    null;
+
   const distanceMeters = Number(route.distance ?? 0);
   const durationSeconds = Number(route.duration ?? 0);
 
   const path = toLeafletPath(geometry);
   const distanceKm = distanceMeters / 1000;
-  const distanceLabel = distanceMeters >= 1000
-    ? `${distanceKm.toFixed(1)} km`
-    : `${Math.round(distanceMeters)} m`;
+
+  const distanceLabel =
+    distanceMeters >= 1000
+      ? `${distanceKm.toFixed(1)} km`
+      : `${Math.round(distanceMeters)} m`;
+
   const durationLabel = `${Math.max(1, Math.round(durationSeconds / 60))} mins`;
 
   const communityReports = safetyContext.communityReports ?? [];
@@ -65,20 +122,55 @@ export function evaluateCandidateRoute(route, index, safetyContext = {}) {
     durationSeconds
   };
 
-  // Run Route Safety Analysis & Safety Score Engine independently for this candidate
-  const routeAnalysis = analyzeRouteSafetyData(routeObj, communityReports, safetyData);
-  const scoreResult = calculateSafetyScoreEngine(routeAnalysis);
+
+  // ==========================================================
+  // ROUTE SAFETY ANALYSIS
+  // ==========================================================
+
+  const routeAnalysis = analyzeRouteSafetyData(
+    routeObj,
+    communityReports,
+    safetyData
+  );
+
+
+  // ==========================================================
+  // SAFETY SCORE ENGINE
+  // ==========================================================
+
+  const scoreResult = await calculateSafetyScoreEngine(routeAnalysis);
+
+
+  // ==========================================================
+  // WARNINGS
+  // ==========================================================
 
   const warnings = [...(scoreResult.topNegativeFactors || [])];
-  if (routeAnalysis.penetratedDangerZones && routeAnalysis.penetratedDangerZones.length > 0) {
+
+  if (
+    routeAnalysis.penetratedDangerZones &&
+    routeAnalysis.penetratedDangerZones.length > 0
+  ) {
     routeAnalysis.penetratedDangerZones.forEach((dz) => {
-      warnings.push(`⚠ Caution: Route passes through ${dz.category} (${dz.radius}m radius)`);
+      warnings.push(
+        `⚠ Caution: Route passes through ${dz.category} (${dz.radius}m radius)`
+      );
     });
   }
 
-  if (scoreResult.finalScore < 70 && !warnings.some((w) => w.includes("Vulnerability") || w.includes("Risk"))) {
+  if (
+    scoreResult.displayedSafetyScore < 70 &&
+    !warnings.some(
+      (w) => w.includes("Vulnerability") || w.includes("Risk")
+    )
+  ) {
     warnings.push("⚠ Elevated security risk along route corridor");
   }
+
+
+  // ==========================================================
+  // COMPLETE ROUTE EVALUATION
+  // ==========================================================
 
   const evaluation = {
     routeId: `route-${index + 1}`,
@@ -88,100 +180,148 @@ export function evaluateCandidateRoute(route, index, safetyContext = {}) {
     duration: durationLabel,
     distanceMeters,
     durationSeconds,
-    safetyScore: scoreResult.finalScore,
+
+    safetyScore: scoreResult.displayedSafetyScore,
+    displayedSafetyScore: scoreResult.displayedSafetyScore,
+    internalRouteRisk: scoreResult.internalRouteRisk,
+    finalRouteRankingScore: scoreResult.finalRouteRankingScore,
+
     historicalRisk: scoreResult.historicalRiskDisplay,
     communityRisk: scoreResult.communityRiskDisplay,
-    weightedHistoricalRisk: scoreResult.historicalRisk ?? 0,
-    weightedCommunityRisk: scoreResult.communityRisk ?? 0,
+    weightedHistoricalRisk: scoreResult.weightedHistoricalRisk,
+    weightedCommunityRisk: scoreResult.weightedCommunityRisk,
+
     dangerPenalty: routeAnalysis.totalDangerPenalty ?? 0,
     penetratedDangerZones: routeAnalysis.penetratedDangerZones ?? [],
+
     historicalReportCount: routeAnalysis.historicalReports.length,
-    communityReportCount: routeAnalysis.positiveReports.length + routeAnalysis.negativeReports.length,
+    communityReportCount:
+      routeAnalysis.positiveReports.length +
+      routeAnalysis.negativeReports.length,
     positiveReportCount: routeAnalysis.positiveReports.length,
     negativeReportCount: routeAnalysis.negativeReports.length,
+
     positiveReports: routeAnalysis.positiveReports,
     negativeReports: routeAnalysis.negativeReports,
     historicalReports: routeAnalysis.historicalReports,
+
     safetyLevel: scoreResult.safetyLevel,
     safetyBadge: scoreResult.safetyBadge,
-    riskLevel: scoreResult.finalScore >= 80 ? "Low" : scoreResult.finalScore >= 60 ? "Medium" : "High",
+    riskLevel:
+      scoreResult.displayedSafetyScore >= 80
+        ? "Low"
+        : scoreResult.displayedSafetyScore >= 60
+          ? "Medium"
+          : "High",
+
     warnings,
     routeAnalysis,
-    scoreResult,
+    scoreResult
   };
 
-  console.log(`----------------------------------`);
+
+  // ==========================================================
+  // DEBUG OUTPUT (PART 13)
+  // ==========================================================
+
+  console.log("----------------------------------");
   console.log(`Route ID: ${evaluation.routeId}`);
   console.log(`Distance: ${evaluation.distance}`);
   console.log(`Duration: ${evaluation.duration}`);
-  console.log(`Historical Reports: ${evaluation.historicalReportCount}`);
-  console.log(`Community Reports: ${evaluation.communityReportCount}`);
-  console.log(`Danger Zone Penalty: ${evaluation.dangerPenalty} (Penetrated: ${evaluation.penetratedDangerZones.length})`);
+  console.log(`Historical Risk: ${evaluation.historicalRisk}`);
   console.log(`Weighted Historical Risk: ${evaluation.weightedHistoricalRisk}`);
+  console.log(`Community Risk: ${evaluation.communityRisk}`);
   console.log(`Weighted Community Risk: ${evaluation.weightedCommunityRisk}`);
-  console.log(`Final Safety Score: ${evaluation.safetyScore}`);
-  console.log(`----------------------------------`);
+  console.log(`Danger Zone Penalty: ${evaluation.dangerPenalty}`);
+  console.log(`Displayed Safety Score: ${evaluation.displayedSafetyScore}`);
+  console.log(`Internal Route Risk: ${evaluation.internalRouteRisk}`);
+  console.log(`Final Route Ranking Score: ${evaluation.finalRouteRankingScore}`);
+  console.log(`Danger Zones Entered: ${evaluation.penetratedDangerZones.length}`);
+  console.log(`ML Prediction Used: ${scoreResult.mlPredictionUsed}`);
+  console.log("----------------------------------");
 
   return evaluation;
 }
 
-/**
- * Requests candidate alternative routes from OpenRouteService (with OSRM fallback)
- */
-async function fetchCandidateRoutes(origin, destination, safetyContext = {}) {
+
+// ============================================================
+// FETCH CANDIDATE ROUTES
+// ============================================================
+
+async function fetchCandidateRoutes(
+  origin,
+  destination,
+  safetyContext = {}
+) {
   const coordsStr = `${origin.lon},${origin.lat};${destination.lon},${destination.lat}`;
-  const apiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OPENROUTESERVICE_API_KEY) ||
-    (typeof process !== 'undefined' && process.env?.OPENROUTESERVICE_API_KEY) ||
-    "5b3ce3597851110001cf6248a514d872782b49c0a6b1897d1952f4a4";
+
+  const apiKey =
+    (typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_OPENROUTESERVICE_API_KEY) ||
+    (typeof process !== "undefined" &&
+      process.env?.OPENROUTESERVICE_API_KEY) ||
+    "";
 
   let rawRoutes = [];
 
-  // 1. Try OpenRouteService API
-  try {
-    const orsUrl = `https://api.openrouteservice.org/v2/directions/driving-car/geojson`;
-    const headers = {
-      "Content-Type": "application/json",
-      "Accept": "application/json, application/geo+json",
-    };
-    if (apiKey) {
-      headers["Authorization"] = apiKey;
-    }
 
-    const orsRes = await fetch(orsUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        coordinates: [
-          [origin.lon, origin.lat],
-          [destination.lon, destination.lat]
-        ],
-        alternative_routes: {
-          target_count: 4,
-          weight_factor: 1.4,
-          share_factor: 0.6
+  // ==========================================================
+  // 1. OPENROUTESERVICE
+  // ==========================================================
+
+  if (apiKey) {
+    try {
+      const orsUrl =
+        "https://api.openrouteservice.org/v2/directions/driving-car/geojson";
+
+      const headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, application/geo+json",
+        "Authorization": apiKey
+      };
+
+      const orsRes = await fetch(orsUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          coordinates: [
+            [origin.lon, origin.lat],
+            [destination.lon, destination.lat]
+          ],
+          alternative_routes: {
+            target_count: 4,
+            weight_factor: 1.4,
+            share_factor: 0.6
+          }
+        })
+      });
+
+      if (orsRes.ok) {
+        const orsData = await orsRes.json();
+        const features = orsData?.features ?? [];
+
+        if (features.length > 0) {
+          rawRoutes = features.map((feat) => ({
+            distance: feat.properties?.summary?.distance ?? 0,
+            duration: feat.properties?.summary?.duration ?? 0,
+            geometry: feat.geometry
+          }));
         }
-      })
-    });
-
-    if (orsRes.ok) {
-      const orsData = await orsRes.json();
-      const features = orsData?.features ?? [];
-      if (features.length > 0) {
-        rawRoutes = features.map((feat) => ({
-          distance: feat.properties?.summary?.distance ?? 0,
-          duration: feat.properties?.summary?.duration ?? 0,
-          geometry: feat.geometry
-        }));
       }
+    } catch (err) {
+      console.warn("OpenRouteService API request failed, falling back to OSRM:", err);
     }
-  } catch (err) {
-    console.warn("OpenRouteService API request failed, falling back to OSRM:", err);
   }
 
-  // 2. Fall back to OSRM API Request with alternatives=true if ORS returned fewer than 2 routes
+
+  // ==========================================================
+  // 2. OSRM FALLBACK
+  // ==========================================================
+
   if (rawRoutes.length < 2) {
     try {
       const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&alternatives=true`;
+
       const res = await fetch(osrmUrl, {
         headers: { Accept: "application/json" }
       });
@@ -189,6 +329,7 @@ async function fetchCandidateRoutes(origin, destination, safetyContext = {}) {
       if (res.ok) {
         const data = await res.json();
         const osrmRoutes = data?.routes ?? [];
+
         if (osrmRoutes.length > rawRoutes.length) {
           rawRoutes = osrmRoutes;
         }
@@ -198,9 +339,18 @@ async function fetchCandidateRoutes(origin, destination, safetyContext = {}) {
     }
   }
 
-  // 3. If still only 1 route, generate geometric detour alternatives
+
+  // ==========================================================
+  // 3. GEOMETRIC DETOUR FALLBACK
+  // ==========================================================
+
   const distKm = haversineDistanceKm(origin, destination);
-  if (rawRoutes.length === 1 && distKm > 0.5 && rawRoutes[0].geometry?.coordinates?.length > 4) {
+
+  if (
+    rawRoutes.length === 1 &&
+    distKm > 0.5 &&
+    rawRoutes[0].geometry?.coordinates?.length > 4
+  ) {
     const baseCoords = rawRoutes[0].geometry.coordinates;
     const midIdx = Math.floor(baseCoords.length / 2);
     const midPoint = baseCoords[midIdx];
@@ -211,7 +361,11 @@ async function fetchCandidateRoutes(origin, destination, safetyContext = {}) {
     const detourPromises = [detour1, detour2].map(async (detourPt) => {
       try {
         const dUrl = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${detourPt[0]},${detourPt[1]};${destination.lon},${destination.lat}?overview=full&geometries=geojson`;
-        const dRes = await fetch(dUrl, { headers: { Accept: "application/json" } });
+
+        const dRes = await fetch(dUrl, {
+          headers: { Accept: "application/json" }
+        });
+
         if (dRes.ok) {
           const dData = await dRes.json();
           return dData?.routes?.[0] || null;
@@ -219,170 +373,255 @@ async function fetchCandidateRoutes(origin, destination, safetyContext = {}) {
       } catch {
         return null;
       }
+      return null;
     });
 
     const fallbackDetours = (await Promise.all(detourPromises)).filter(Boolean);
     rawRoutes = [...rawRoutes, ...fallbackDetours];
   }
 
-  console.log(`==================================`);
+
+  // ==========================================================
+  // DEBUG
+  // ==========================================================
+
+  console.log("==================================");
   console.log(`Candidate routes returned (${rawRoutes.length}):`);
   rawRoutes.forEach((rt, idx) => {
     const dKm = (Number(rt.distance || 0) / 1000).toFixed(1);
     const dMin = Math.max(1, Math.round(Number(rt.duration || 0) / 60));
     console.log(`Route ${idx + 1}: ${dKm} km, ${dMin} mins`);
   });
-  console.log(`==================================`);
+  console.log("==================================");
 
   return rawRoutes;
 }
 
-/**
- * Danger-Aware comparison logic for Safe Route selection:
- * 1. Prioritize routes with FEWER penetrated danger zones
- * 2. Higher Safety Score
- * 3. Fewer negative community reports
- * 4. Fewer historical reports
- * 5. Lower weighted historical risk
- * 6. Shorter distance
- * 7. Shorter duration
- */
-function compareRoutesForSafe(a, b) {
-  if (!a) return { winner: b, reason: "Initial route selection" };
-  if (!b) return { winner: a, reason: "Initial route selection" };
 
-  // 1. Prioritize routes avoiding danger zones
-  const penA = a.penetratedDangerZones?.length || 0;
-  const penB = b.penetratedDangerZones?.length || 0;
+// ============================================================
+// COMPARE ROUTES FOR SAFE ROUTE SELECTION
+//
+// Priority:
+// 1. Lowest Internal Route Risk
+// 2. Highest Displayed Safety Score
+// 3. Fewer Negative Community Reports
+// 4. Fewer Historical Reports
+// 5. Lower Weighted Historical Risk
+// 6. Shorter Distance
+// 7. Shorter Duration
+// ============================================================
 
-  if (penA !== penB) {
-    const winner = penA < penB ? a : b;
+export function compareRoutesForSafe(a, b) {
+  if (!a) {
+    return { winner: b, reason: "Initial route selection" };
+  }
+
+  if (!b) {
+    return { winner: a, reason: "Initial route selection" };
+  }
+
+
+  // 1. LOWER INTERNAL ROUTE RISK
+  const riskA = a.internalRouteRisk ?? a.scoreResult?.internalRouteRisk ?? Infinity;
+  const riskB = b.internalRouteRisk ?? b.scoreResult?.internalRouteRisk ?? Infinity;
+
+  if (riskA !== riskB) {
+    const winner = riskA < riskB ? a : b;
     const loser = winner.routeId === a.routeId ? b : a;
+
     return {
       winner,
-      reason: `Avoided Danger Zones: ${winner.routeId} penetrates ${winner.penetratedDangerZones.length} zone(s) vs ${loser.routeId} penetrating ${loser.penetratedDangerZones.length} zone(s).`
+      reason: `Lower Internal Route Risk (${winner.internalRouteRisk} vs ${loser.internalRouteRisk})`
     };
   }
 
-  // 2. Higher Safety Score
-  if (b.safetyScore !== a.safetyScore) {
-    const winner = b.safetyScore > a.safetyScore ? b : a;
+
+  // 2. HIGHER DISPLAYED SAFETY SCORE
+  const scoreA = a.displayedSafetyScore ?? a.safetyScore ?? 0;
+  const scoreB = b.displayedSafetyScore ?? b.safetyScore ?? 0;
+
+  if (scoreB !== scoreA) {
+    const winner = scoreB > scoreA ? b : a;
     const loser = winner.routeId === a.routeId ? b : a;
+
     return {
       winner,
-      reason: `Higher Safety Score (${winner.safetyScore} vs ${loser.safetyScore})`
+      reason: `Higher Displayed Safety Score (${winner.displayedSafetyScore} vs ${loser.displayedSafetyScore})`
     };
   }
 
-  // 3. Fewer negative community reports
+
+  // 3. FEWER NEGATIVE COMMUNITY REPORTS
   const negA = a.negativeReportCount ?? (a.negativeReports?.length || 0);
   const negB = b.negativeReportCount ?? (b.negativeReports?.length || 0);
+
   if (negA !== negB) {
     const winner = negA < negB ? a : b;
     return {
       winner,
-      reason: `Safety Score tied (${a.safetyScore}). Negative Community Reports: ${negA} vs ${negB}. Therefore ${winner.routeId} wins.`
+      reason: `Internal Risk tied. Negative Community Reports: ${negA} vs ${negB}. Therefore ${winner.routeId} wins.`
     };
   }
 
-  // 4. Fewer historical reports
+
+  // 4. FEWER HISTORICAL REPORTS
   const histA = a.historicalReportCount ?? (a.historicalReports?.length || 0);
   const histB = b.historicalReportCount ?? (b.historicalReports?.length || 0);
+
   if (histA !== histB) {
     const winner = histA < histB ? a : b;
     return {
       winner,
-      reason: `Safety Score tied (${a.safetyScore}). Historical Reports: ${histA} vs ${histB}. Therefore ${winner.routeId} wins.`
+      reason: `Internal Risk tied. Historical Reports: ${histA} vs ${histB}. Therefore ${winner.routeId} wins.`
     };
   }
 
-  // 5. Lower weighted historical risk
+
+  // 5. LOWER WEIGHTED HISTORICAL RISK
   const histRiskA = a.weightedHistoricalRisk ?? a.historicalRisk ?? 0;
   const histRiskB = b.weightedHistoricalRisk ?? b.historicalRisk ?? 0;
+
   if (histRiskA !== histRiskB) {
     const winner = histRiskA < histRiskB ? a : b;
     return {
       winner,
-      reason: `Safety Score tied (${a.safetyScore}). Weighted Historical Risk: ${histRiskA} vs ${histRiskB}. Therefore ${winner.routeId} wins.`
+      reason: `Internal Risk tied. Weighted Historical Risk: ${histRiskA} vs ${histRiskB}. Therefore ${winner.routeId} wins.`
     };
   }
 
-  // 6. Shorter distance
+
+  // 6. SHORTER DISTANCE
   if (a.distanceMeters !== b.distanceMeters) {
     const winner = a.distanceMeters < b.distanceMeters ? a : b;
     const loser = winner.routeId === a.routeId ? b : a;
     return {
       winner,
-      reason: `Safety Score tied (${a.safetyScore}). Distance: ${winner.distance} vs ${loser.distance}. Therefore ${winner.routeId} wins.`
+      reason: `Internal Risk tied. Distance: ${winner.distance} vs ${loser.distance}. Therefore ${winner.routeId} wins.`
     };
   }
 
-  // 7. Shorter duration
+
+  // 7. SHORTER DURATION
   if (a.durationSeconds !== b.durationSeconds) {
     const winner = a.durationSeconds < b.durationSeconds ? a : b;
     const loser = winner.routeId === a.routeId ? b : a;
     return {
       winner,
-      reason: `Safety Score tied (${a.safetyScore}). Duration: ${winner.duration} vs ${loser.duration}. Therefore ${winner.routeId} wins.`
+      reason: `Internal Risk tied. Duration: ${winner.duration} vs ${loser.duration}. Therefore ${winner.routeId} wins.`
     };
   }
 
   return {
     winner: a,
-    reason: `Safety Score tied (${a.safetyScore}). All metrics identical.`
+    reason: "Internal Risk tied. All metrics identical."
   };
 }
 
-/**
- * Requirement 4 & 6 & 7: Evaluate candidate routes, perform multi-attempt waypoint rerouting (up to 5 attempts) around high-risk zones, and select Safe Route.
- */
-export async function evaluateAllRoutes(from, to, safetyContext = {}) {
+
+// ============================================================
+// EVALUATE ALL ROUTES
+// ============================================================
+
+export async function evaluateAllRoutes(
+  from,
+  to,
+  safetyContext = {}
+) {
   const origin = normalizeCoords(from);
   const destination = normalizeCoords(to);
 
   if (!origin || !destination) {
-    throw new Error("Both origin and destination coordinates are required.");
+    throw new Error(
+      "Both origin and destination coordinates are required."
+    );
   }
 
   const MAX_REROUTE_ATTEMPTS = 5;
   let rerouteAttempt = 0;
-  const evaluatedMap = new Map();
 
-  const addEvaluatedCandidate = (candRoute) => {
-    const key = JSON.stringify(candRoute.geometry?.coordinates || candRoute.path || []);
+  const evaluatedMap = new Map();
+  let nextRouteIndex = 0;
+
+  const addEvaluatedCandidate = async (candRoute) => {
+    const key = JSON.stringify(
+      candRoute.geometry?.coordinates || candRoute.path || []
+    );
+
     if (!evaluatedMap.has(key)) {
-      const evaluation = evaluateCandidateRoute(candRoute, evaluatedMap.size, safetyContext);
+      const routeIndex = nextRouteIndex++;
+      const evaluation = await evaluateCandidateRoute(
+        candRoute,
+        routeIndex,
+        safetyContext
+      );
+
       evaluatedMap.set(key, evaluation);
     }
   };
 
-  // 1. Initial candidate fetch
-  const initialCandidates = await fetchCandidateRoutes(origin, destination, safetyContext);
-  initialCandidates.forEach(addEvaluatedCandidate);
+
+  // ==========================================================
+  // 1. INITIAL CANDIDATE FETCH & EVALUATION
+  // ==========================================================
+
+  const initialCandidates = await fetchCandidateRoutes(
+    origin,
+    destination,
+    safetyContext
+  );
+
+  await Promise.all(
+    initialCandidates.map((route) => addEvaluatedCandidate(route))
+  );
 
   let currentEvaluated = Array.from(evaluatedMap.values());
-  let currentSafest = currentEvaluated.reduce((prev, curr) => compareRoutesForSafe(prev, curr).winner, currentEvaluated[0]);
 
-  // 2. Requirement 4: Multi-Attempt Waypoint Rerouting Loop (up to 5 attempts)
-  while (rerouteAttempt < MAX_REROUTE_ATTEMPTS && currentSafest.penetratedDangerZones && currentSafest.penetratedDangerZones.length > 0) {
+  if (currentEvaluated.length === 0) {
+    throw new Error("No candidate routes were returned.");
+  }
+
+  let currentSafest = currentEvaluated.reduce(
+    (prev, curr) => compareRoutesForSafe(prev, curr).winner,
+    currentEvaluated[0]
+  );
+
+
+  // ==========================================================
+  // 2. MULTI-ATTEMPT WAYPOINT REROUTING
+  // ==========================================================
+
+  while (
+    rerouteAttempt < MAX_REROUTE_ATTEMPTS &&
+    currentSafest.penetratedDangerZones &&
+    currentSafest.penetratedDangerZones.length > 0
+  ) {
     rerouteAttempt++;
-    console.log(`==================================`);
-    console.log(`[Rerouting Attempt ${rerouteAttempt}/${MAX_REROUTE_ATTEMPTS}] Current safest route (${currentSafest.routeId}) penetrates ${currentSafest.penetratedDangerZones.length} danger zone(s). Requesting detour alternative routes via waypoints...`);
-
+    const previousSafestRisk = currentSafest.internalRouteRisk;
     const targetZone = currentSafest.penetratedDangerZones[0];
+
     const offset = (rerouteAttempt * 0.008) + 0.008;
 
     const detourWaypoints = [
       [targetZone.longitude + offset, targetZone.latitude + offset],
       [targetZone.longitude - offset, targetZone.latitude - offset],
       [targetZone.longitude - offset, targetZone.latitude + offset],
-      [targetZone.longitude + offset, targetZone.latitude - offset],
+      [targetZone.longitude + offset, targetZone.latitude - offset]
     ];
+
+    // DEBUG LOGGING FOR REROUTING (PART 13)
+    console.log("==================================");
+    console.log(`[Rerouting Attempt ${rerouteAttempt}/${MAX_REROUTE_ATTEMPTS}]`);
+    console.log(`  Target Danger Zone: ${targetZone.id} (${targetZone.category}, Lat: ${targetZone.latitude}, Lon: ${targetZone.longitude}, Radius: ${targetZone.radius}m, Severity: ${targetZone.severity})`);
+    console.log(`  Generated Detour Waypoints:`, detourWaypoints);
 
     const detourPromises = detourWaypoints.map(async (waypoint) => {
       try {
         const dUrl = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${waypoint[0]},${waypoint[1]};${destination.lon},${destination.lat}?overview=full&geometries=geojson`;
-        const dRes = await fetch(dUrl, { headers: { Accept: "application/json" } });
+
+        const dRes = await fetch(dUrl, {
+          headers: { Accept: "application/json" }
+        });
+
         if (dRes.ok) {
           const dData = await dRes.json();
           return dData?.routes?.[0] || null;
@@ -390,31 +629,66 @@ export async function evaluateAllRoutes(from, to, safetyContext = {}) {
       } catch {
         return null;
       }
+      return null;
     });
 
     const detourRoutes = (await Promise.all(detourPromises)).filter(Boolean);
+    console.log(`  Detour Candidates Returned: ${detourRoutes.length}`);
+
     if (detourRoutes.length > 0) {
-      detourRoutes.forEach(addEvaluatedCandidate);
+      await Promise.all(
+        detourRoutes.map((route) => addEvaluatedCandidate(route))
+      );
+
       currentEvaluated = Array.from(evaluatedMap.values());
-      currentSafest = currentEvaluated.reduce((prev, curr) => compareRoutesForSafe(prev, curr).winner, currentEvaluated[0]);
+
+      currentSafest = currentEvaluated.reduce(
+        (prev, curr) => compareRoutesForSafe(prev, curr).winner,
+        currentEvaluated[0]
+      );
+
+      const internalRiskImproved = currentSafest.internalRouteRisk < previousSafestRisk;
+      const zonesRemaining = currentSafest.penetratedDangerZones?.length || 0;
+
+      console.log(`  Previous Safest Internal Risk: ${previousSafestRisk} -> New Safest Internal Risk: ${currentSafest.internalRouteRisk}`);
+      console.log(`  Internal Risk Improved: ${internalRiskImproved}`);
+      console.log(`  Penetrated Danger Zones Remaining: ${zonesRemaining}`);
+      console.log("==================================");
+
     } else {
+      console.log(`  No new detour routes generated on attempt ${rerouteAttempt}. Breaking loop.`);
+      console.log("==================================");
       break;
     }
   }
 
+
+  // ==========================================================
+  // ALL EVALUATED ROUTES
+  // ==========================================================
+
   const evaluatedRoutes = Array.from(evaluatedMap.values());
 
-  // 3. Find Fast Route (minimum duration)
+
+  // ==========================================================
+  // 3. FIND FAST ROUTE
+  // ==========================================================
+
   let fastRoute = evaluatedRoutes[0];
+
   for (let i = 1; i < evaluatedRoutes.length; i++) {
     if (evaluatedRoutes[i].durationSeconds < fastRoute.durationSeconds) {
       fastRoute = evaluatedRoutes[i];
     }
   }
 
-  // 4. Find Safe Route
+
+  // ==========================================================
+  // 4. FIND SAFE ROUTE
+  // ==========================================================
+
   let safeRoute = evaluatedRoutes[0];
-  let selectionReason = "Highest Safety Score & Danger Zone Avoidance";
+  let selectionReason = "Highest Internal Route Safety & Danger Avoidance";
 
   for (let i = 1; i < evaluatedRoutes.length; i++) {
     const comparison = compareRoutesForSafe(safeRoute, evaluatedRoutes[i]);
@@ -422,26 +696,53 @@ export async function evaluateAllRoutes(from, to, safetyContext = {}) {
     selectionReason = comparison.reason;
   }
 
-  // 5. Avoided Danger Zones
-  const fastPenetratedMap = new Map((fastRoute.penetratedDangerZones || []).map((z) => [z.id, z]));
-  const safePenetratedMap = new Map((safeRoute.penetratedDangerZones || []).map((z) => [z.id, z]));
+
+  // ==========================================================
+  // 5. AVOIDED DANGER ZONES
+  // ==========================================================
+
+  const fastPenetratedMap = new Map(
+    (fastRoute.penetratedDangerZones || []).map((z) => [z.id, z])
+  );
+
+  const safePenetratedMap = new Map(
+    (safeRoute.penetratedDangerZones || []).map((z) => [z.id, z])
+  );
 
   const avoidedDangerZones = [];
+
   fastPenetratedMap.forEach((zone, id) => {
     if (!safePenetratedMap.has(id)) {
       avoidedDangerZones.push(zone);
     }
   });
 
-  const safeRoutePenetratesDanger = safeRoute.penetratedDangerZones && safeRoute.penetratedDangerZones.length > 0;
-  
-  // Requirement 7: Explicitly state if no completely safe alternative exists
+
+  // ==========================================================
+  // 6. SAFE ROUTE DANGER STATUS
+  // ==========================================================
+
+  const safeRoutePenetratesDanger =
+    safeRoute.penetratedDangerZones &&
+    safeRoute.penetratedDangerZones.length > 0;
+
   const noSafeAlternativeNotice = safeRoutePenetratesDanger
     ? "No completely safe alternative exists. Showing the least risky available route."
     : null;
 
-  const isIdentical = evaluatedRoutes.length === 1 || fastRoute.routeId === safeRoute.routeId;
-  const scoreIncrease = Math.max(0, Math.round((safeRoute.safetyScore - fastRoute.safetyScore) * 10) / 10);
+
+  // ==========================================================
+  // 7. FAST VS SAFE COMPARISON
+  // ==========================================================
+
+  const isIdentical =
+    evaluatedRoutes.length === 1 || fastRoute.routeId === safeRoute.routeId;
+
+  const scoreIncrease = Math.max(
+    0,
+    Math.round((safeRoute.displayedSafetyScore - fastRoute.displayedSafetyScore) * 10) / 10
+  );
+
   const timeAddedMinutes = Math.max(
     0,
     Math.round((safeRoute.durationSeconds - fastRoute.durationSeconds) / 60)
@@ -449,22 +750,42 @@ export async function evaluateAllRoutes(from, to, safetyContext = {}) {
 
   let comparisonText = isIdentical
     ? "This route is both the fastest and the safest."
-    : `Compared with the Fast Route, choosing the Safe Route increases the Safety Score by ${scoreIncrease} points while adding only ${timeAddedMinutes} minutes to the journey.`;
+    : noSafeAlternativeNotice
+      ? noSafeAlternativeNotice
+      : scoreIncrease > 0
+        ? `Compared with the Fast Route, choosing the Safe Route increases the Safety Score by ${scoreIncrease} points while adding only ${timeAddedMinutes} minutes to the journey.`
+        : avoidedDangerZones.length > 0
+          ? `Compared with the Fast Route, choosing the Safe Route avoids ${avoidedDangerZones.length} danger zone(s) while adding only ${timeAddedMinutes} minutes to the journey.`
+          : `Choosing the Safe Route provides lower internal risk while adding only ${timeAddedMinutes} minutes to the journey.`;
 
-  if (noSafeAlternativeNotice) {
-    comparisonText = noSafeAlternativeNotice;
-  }
 
-  console.log(`==================================`);
-  console.log(`Fast Route Selected: ${fastRoute.routeId} (${fastRoute.distance}, ${fastRoute.duration}, Score: ${fastRoute.safetyScore})`);
-  console.log(`Safe Route Selected: ${safeRoute.routeId} (${safeRoute.distance}, ${safeRoute.duration}, Score: ${safeRoute.safetyScore})`);
+  // ==========================================================
+  // DEBUG
+  // ==========================================================
+
+  console.log("==================================");
+  console.log(`Fast Route Selected: ${fastRoute.routeId} (${fastRoute.distance}, ${fastRoute.duration}, Displayed Score: ${fastRoute.displayedSafetyScore}, Internal Risk: ${fastRoute.internalRouteRisk})`);
+  console.log(`Safe Route Selected: ${safeRoute.routeId} (${safeRoute.distance}, ${safeRoute.duration}, Displayed Score: ${safeRoute.displayedSafetyScore}, Internal Risk: ${safeRoute.internalRouteRisk})`);
   console.log(`Selection Reason for Safe Route: ${selectionReason}`);
   console.log(`Reroute Attempts Performed: ${rerouteAttempt}/${MAX_REROUTE_ATTEMPTS}`);
-  console.log(`Notice: ${noSafeAlternativeNotice || 'Safe alternative found'}`);
+  console.log(`Notice: ${noSafeAlternativeNotice || "Safe alternative found"}`);
   console.log(`isIdentical: ${isIdentical}`);
-  console.log(`==================================`);
+  console.log("==================================");
 
-  const dangerZones = buildDangerZones(safetyContext.safetyData, safetyContext.communityReports);
+
+  // ==========================================================
+  // BUILD DANGER ZONES
+  // ==========================================================
+
+  const dangerZones = buildDangerZones(
+    safetyContext.safetyData,
+    safetyContext.communityReports
+  );
+
+
+  // ==========================================================
+  // RETURN COMPLETE ROUTING RESULT
+  // ==========================================================
 
   return {
     fastest: fastRoute,
@@ -475,6 +796,7 @@ export async function evaluateAllRoutes(from, to, safetyContext = {}) {
     avoidedDangerZones,
     noSafeAlternativeNotice,
     isIdentical,
+
     recommendation: {
       recommendedRouteType: "safest",
       reason: selectionReason,
@@ -487,18 +809,54 @@ export async function evaluateAllRoutes(from, to, safetyContext = {}) {
   };
 }
 
-export function buildRouteSummary(routeData, routeIndex = 0, label = "fast", safetyContext = {}) {
-  const routes = routeData?.routes ?? (Array.isArray(routeData) ? routeData : [routeData]);
+
+// ============================================================
+// BUILD ROUTE SUMMARY
+// ============================================================
+
+export async function buildRouteSummary(
+  routeData,
+  routeIndex = 0,
+  label = "fast",
+  safetyContext = {}
+) {
+  const routes =
+    routeData?.routes ??
+    (Array.isArray(routeData) ? routeData : [routeData]);
+
   const candidate = routes[routeIndex] ?? routes[0];
-  return evaluateCandidateRoute(candidate, routeIndex, safetyContext);
+
+  return await evaluateCandidateRoute(
+    candidate,
+    routeIndex,
+    safetyContext
+  );
 }
 
-export async function getFastestRoute(from, to, safetyContext = {}) {
+
+// ============================================================
+// GET FASTEST ROUTE
+// ============================================================
+
+export async function getFastestRoute(
+  from,
+  to,
+  safetyContext = {}
+) {
   const result = await evaluateAllRoutes(from, to, safetyContext);
   return result.fastest;
 }
 
-export async function getSafestRoute(from, to, safetyContext = {}) {
+
+// ============================================================
+// GET SAFEST ROUTE
+// ============================================================
+
+export async function getSafestRoute(
+  from,
+  to,
+  safetyContext = {}
+) {
   const result = await evaluateAllRoutes(from, to, safetyContext);
   return result.safest;
 }
