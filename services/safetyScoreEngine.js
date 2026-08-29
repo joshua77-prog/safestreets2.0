@@ -400,6 +400,8 @@ function createDefaultResult() {
 // ML MODEL REQUEST
 // ============================================================
 
+let mlWarningLogged = false;
+
 async function getMLHistoricalRisk(features) {
   try {
     const response = await fetch(ML_API_URL, {
@@ -440,7 +442,10 @@ async function getMLHistoricalRisk(features) {
     return Math.max(0, Number(result.historical_risk));
 
   } catch (error) {
-    console.warn("ML historical-risk prediction unavailable:", error.message);
+    if (!mlWarningLogged) {
+      console.warn("ML historical-risk prediction API unavailable (using rule-based fallback):", error.message);
+      mlWarningLogged = true;
+    }
     return null;
   }
 }
@@ -718,7 +723,11 @@ export async function calculateSafetyScoreEngine(analysisResult) {
     : 0;
 
   if (numHistRecords > 0) {
-    const predictionPromises = historicalReports.map(async (report) => {
+    const sampleReports = numHistRecords > 30
+      ? [...historicalReports].sort((a, b) => (b.crime_count ?? 0) - (a.crime_count ?? 0) || (a.distance_from_route ?? 0) - (b.distance_from_route ?? 0)).slice(0, 30)
+      : historicalReports;
+
+    const predictionPromises = sampleReports.map(async (report) => {
       const features = extractHistoricalFeatures(report);
       return await getMLHistoricalRisk(features);
     });

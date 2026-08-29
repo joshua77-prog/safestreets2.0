@@ -153,9 +153,22 @@ export default function SafeNavigation() {
     setIsUserInteracting(false);
 
     try {
+      let activeSafetyData = safetyData;
+      let activeCommunityReports = communityReports;
+
+      if (!activeSafetyData || activeSafetyData.length === 0) {
+        console.log("[ROUTING] Safety data state empty, fetching live reports from Supabase...");
+        [activeSafetyData, activeCommunityReports] = await Promise.all([
+          getSafetyData(),
+          getCommunityReports()
+        ]);
+        setSafetyData(activeSafetyData);
+        setCommunityReports(activeCommunityReports);
+      }
+
       const safetyContext = {
-        safetyData,
-        communityReports,
+        safetyData: activeSafetyData,
+        communityReports: activeCommunityReports,
       };
 
       const routeResults = await evaluateAllRoutes(origin, destination, safetyContext);

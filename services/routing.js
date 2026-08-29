@@ -599,7 +599,7 @@ export async function evaluateAllRoutes(
     const previousSafestRisk = currentSafest.internalRouteRisk;
     const targetZone = currentSafest.penetratedDangerZones[0];
 
-    const offset = (rerouteAttempt * 0.008) + 0.008;
+    const offset = (rerouteAttempt * 0.006) + 0.012;
 
     const detourWaypoints = [
       [targetZone.longitude + offset, targetZone.latitude + offset],
@@ -611,8 +611,8 @@ export async function evaluateAllRoutes(
     // DEBUG LOGGING FOR REROUTING (PART 13)
     console.log("==================================");
     console.log(`[Rerouting Attempt ${rerouteAttempt}/${MAX_REROUTE_ATTEMPTS}]`);
-    console.log(`  Target Danger Zone: ${targetZone.id} (${targetZone.category}, Lat: ${targetZone.latitude}, Lon: ${targetZone.longitude}, Radius: ${targetZone.radius}m, Severity: ${targetZone.severity})`);
-    console.log(`  Generated Detour Waypoints:`, detourWaypoints);
+    console.log(`  Target Danger Zone: ${targetZone.id} (${targetZone.category}, Lat: ${targetZone.latitude.toFixed(4)}, Lon: ${targetZone.longitude.toFixed(4)}, Radius: ${targetZone.radius}m, Severity: ${targetZone.severity})`);
+    console.log(`  Generated 1 KM+ Detour Waypoints:`, detourWaypoints);
 
     const detourPromises = detourWaypoints.map(async (waypoint) => {
       try {
@@ -760,17 +760,39 @@ export async function evaluateAllRoutes(
 
 
   // ==========================================================
-  // DEBUG
+  // TEMPORARY DEBUGGING LOGS (REQUIREMENT 2)
   // ==========================================================
 
-  console.log("==================================");
-  console.log(`Fast Route Selected: ${fastRoute.routeId} (${fastRoute.distance}, ${fastRoute.duration}, Displayed Score: ${fastRoute.displayedSafetyScore}, Internal Risk: ${fastRoute.internalRouteRisk})`);
-  console.log(`Safe Route Selected: ${safeRoute.routeId} (${safeRoute.distance}, ${safeRoute.duration}, Displayed Score: ${safeRoute.displayedSafetyScore}, Internal Risk: ${safeRoute.internalRouteRisk})`);
-  console.log(`Selection Reason for Safe Route: ${selectionReason}`);
-  console.log(`Reroute Attempts Performed: ${rerouteAttempt}/${MAX_REROUTE_ATTEMPTS}`);
-  console.log(`Notice: ${noSafeAlternativeNotice || "Safe alternative found"}`);
-  console.log(`isIdentical: ${isIdentical}`);
-  console.log("==================================");
+  console.log("\n[ROUTE]");
+  console.log(`Fast route coordinates: ${fastRoute.path?.length || 0} points`);
+
+  console.log("\n[FAST ROUTE SAFETY]");
+  console.log(`Historical risk: ${fastRoute.historicalRisk}`);
+  console.log(`Community risk: ${fastRoute.communityRisk}`);
+  console.log(`Reports detected: ${fastRoute.historicalReportCount + fastRoute.communityReportCount}`);
+  console.log(`Safety score: ${fastRoute.displayedSafetyScore}`);
+
+  console.log("\n[SAFE ROUTE]");
+  console.log(`Risk detected on fast route: ${fastRoute.penetratedDangerZones?.length > 0 ? "YES" : "NO"}`);
+  console.log(`Alternative candidates generated: ${evaluatedRoutes.length}`);
+
+  evaluatedRoutes.forEach((cand, idx) => {
+    console.log(`\nCandidate ${idx + 1} (${cand.routeId}):`);
+    console.log(`- distance: ${cand.distance}`);
+    console.log(`- duration: ${cand.duration}`);
+    console.log(`- reports detected: ${cand.historicalReportCount + cand.communityReportCount}`);
+    console.log(`- historical risk: ${cand.historicalRisk}`);
+    console.log(`- community risk: ${cand.communityRisk}`);
+    console.log(`- danger penalty: ${cand.dangerPenalty}`);
+    console.log(`- final safety score: ${cand.displayedSafetyScore}`);
+  });
+
+  console.log("\n[ROUTE SELECTION]");
+  console.log(`Fast score: ${fastRoute.displayedSafetyScore}`);
+  console.log(`Safe score: ${safeRoute.displayedSafetyScore}`);
+  console.log(`Different route: ${isIdentical ? "NO" : "YES"}`);
+  console.log(`Reason: ${selectionReason}`);
+  console.log("==================================================");
 
 
   // ==========================================================

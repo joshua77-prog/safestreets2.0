@@ -26,7 +26,7 @@ export function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
  * Builds dynamic danger zones from community reports and historical safety analysis records.
  */
 export function buildDangerZones(safetyData = [], communityReports = []) {
-  const dangerZonesMap = new Map();
+  const rawItems = [];
 
   // 1. Process Community Reports (Negative observations create danger zones)
   (communityReports || []).forEach((rep) => {
@@ -39,29 +39,18 @@ export function buildDangerZones(safetyData = [], communityReports = []) {
     if (isPositive) return;
 
     const category = rep.category || rep.issue_type || rep.report_type || "Security Incident";
-    const catLower = category.toLowerCase();
-    
-    let radius = 100;
-    if (catLower.includes("assault") || catLower.includes("violence")) radius = 300;
-    else if (catLower.includes("theft") || catLower.includes("robbery") || catLower.includes("pickpocket")) radius = 150;
-    else if (catLower.includes("harassment") || catLower.includes("stalking")) radius = 100;
-    else if (catLower.includes("suspicious")) radius = 150;
-    else if (catLower.includes("lighting") || catLower.includes("isolated")) radius = 75;
-    else if (catLower.includes("hazard") || catLower.includes("accident")) radius = 100;
-
     const safetyRating = Number(rep.safety_rating ?? 3);
     const baseSeverity = Math.max(10, Math.min(90, (5 - safetyRating) * 20));
 
-    const key = rep.id ?? `danger_comm_${lat.toFixed(4)}_${lon.toFixed(4)}`;
-    dangerZonesMap.set(key, {
-      id: key,
+    rawItems.push({
+      id: rep.id ?? `danger_comm_${lat.toFixed(4)}_${lon.toFixed(4)}`,
       latitude: lat,
       longitude: lon,
-      radius,
       severity: baseSeverity,
       category: `${category} Hotspot`,
       description: rep.intelligence_briefing || rep.description || `${category} reported nearby`,
-      type: "community"
+      type: "community",
+      crimeCount: 1
     });
   });
 
@@ -77,17 +66,9 @@ export function buildDangerZones(safetyData = [], communityReports = []) {
     const lightingScore = Number(item.lighting_score ?? rawObj.lighting_score ?? 5);
 
     const typeLower = String(crimeType).toLowerCase();
-    let radius = 100;
-    if (typeLower.includes("assault") || typeLower.includes("violence")) radius = 300;
-    else if (typeLower.includes("theft") || typeLower.includes("robbery") || typeLower.includes("pickpocket")) radius = 150;
-    else if (typeLower.includes("harassment") || typeLower.includes("stalking")) radius = 100;
-    else if (typeLower.includes("suspicious")) radius = 150;
-    else if (typeLower.includes("lighting") || lightingScore < 6) radius = 75;
-    else if (typeLower.includes("hazard")) radius = 100;
-
     let baseSeverity = 20;
     if (typeLower.includes("assault") || typeLower.includes("violence")) baseSeverity = 80;
-    else if (typeLower.includes("harassment")) baseSeverity = 60;
+    else if (typeLower.includes("harassment") || typeLower.includes("stalking")) baseSeverity = 60;
     else if (typeLower.includes("robbery") || typeLower.includes("theft")) baseSeverity = 50;
     else if (typeLower.includes("suspicious")) baseSeverity = 40;
     else if (lightingScore < 6) baseSeverity = 45;
@@ -95,20 +76,75 @@ export function buildDangerZones(safetyData = [], communityReports = []) {
     if (crimeCount > 5) baseSeverity += 20;
     baseSeverity = Math.min(100, baseSeverity);
 
-    const key = item.id ?? `danger_hist_${lat.toFixed(4)}_${lon.toFixed(4)}`;
-    dangerZonesMap.set(key, {
-      id: key,
+    rawItems.push({
+      id: item.id ?? `danger_hist_${lat.toFixed(4)}_${lon.toFixed(4)}`,
       latitude: lat,
       longitude: lon,
-      radius,
       severity: baseSeverity,
       category: `Historical ${crimeType} Danger Zone`,
       description: `Historical risk: ${crimeType} (${crimeCount} incident/s), Lighting: ${lightingScore}/10`,
-      type: "historical"
+      type: "historical",
+      crimeCount: Math.max(1, crimeCount)
     });
   });
 
-  return Array.from(dangerZonesMap.values());
+  if (rawItems.length === 0) return [];
+
+  // 3. Cluster nearby items into Combined Danger Regions & 1 KM Avoidance Zones
+  const clusters = [];
+  const visited = new Set();
+
+  for (let i = 0; i < rawItems.length; i++) {
+    if (visited.has(i)) continue;
+
+    const item = rawItems[i];
+    visited.add(i);
+
+    const currentCluster = [item];
+
+    for (let j = i + 1; j < rawItems.length; j++) {
+      if (visited.has(j)) continue;
+      const other = rawItems[j];
+
+      const dist = haversineDistanceMeters(item.latitude, item.longitude, other.latitude, other.longitude);
+      if (dist <= 1500) {
+        visited.add(j);
+        currentCluster.push(other);
+      }
+    }
+
+    const totalLat = currentCluster.reduce((sum, it) => sum + it.latitude, 0);
+    const totalLon = currentCluster.reduce((sum, it) => sum + it.longitude, 0);
+    const avgLat = totalLat / currentCluster.length;
+    const avgLon = totalLon / currentCluster.length;
+
+    const maxSeverity = Math.max(...currentCluster.map((it) => it.severity));
+    const totalReports = currentCluster.reduce((sum, it) => sum + it.crimeCount, 0);
+    const mainCategory = currentCluster[0].category;
+
+    // Avoidance Radius: 1000m (1 KM) for high risk clusters or severe incident types
+    let radius = 300;
+    if (maxSeverity >= 50 || totalReports >= 5 || currentCluster.length >= 2) {
+      radius = 1000; // 1 KM Avoidance Zone
+    } else if (maxSeverity >= 35) {
+      radius = 600;
+    }
+
+    const clusterId = `cluster_${item.id}`;
+    clusters.push({
+      id: clusterId,
+      latitude: avgLat,
+      longitude: avgLon,
+      radius,
+      severity: Math.min(100, maxSeverity + (currentCluster.length > 1 ? 15 : 0)),
+      category: currentCluster.length > 1 ? `High Risk Safety Cluster (${currentCluster.length} reports)` : mainCategory,
+      description: currentCluster.length > 1 ? `Combined danger region with ${currentCluster.length} reported safety concerns (${totalReports} incidents total)` : item.description,
+      type: item.type,
+      reportCount: currentCluster.length
+    });
+  }
+
+  return clusters;
 }
 
 /**
@@ -151,13 +187,13 @@ export function calculateDangerPenalties(path = [], dangerZones = []) {
       let basePenalty = 0;
       if (minDistance <= zone.radius) {
         basePenalty = 100;
-      } else if (distOutside <= 50) {
-        basePenalty = 75;
       } else if (distOutside <= 100) {
-        basePenalty = 50;
+        basePenalty = 75;
       } else if (distOutside <= 250) {
-        basePenalty = 25;
+        basePenalty = 50;
       } else if (distOutside <= 500) {
+        basePenalty = 25;
+      } else {
         basePenalty = 10;
       }
 
@@ -337,6 +373,24 @@ export function analyzeRouteSafetyData(route, communityReports = [], safetyData 
     .sort((a, b) => a.distance_from_route - b.distance_from_route);
 
   const dangerPenalties = calculateDangerPenalties(path, dangerZones);
+
+  // DEBUG LOGGING (REQUIREMENT 2)
+  console.log("\n[ROUTE SAFETY]");
+  console.log(`Reports checked against route: ${(communityReports || []).length + (safetyData || []).length}`);
+  console.log(`Reports within route search area: ${allNearbySafetyData.length}`);
+  console.log(`Reports actually affecting route: ${historicalReports.length + negativeReports.length}`);
+
+  if (allNearbySafetyData.length > 0) {
+    allNearbySafetyData.slice(0, 5).forEach((item) => {
+      console.log(`Report:`);
+      console.log(`- id: ${item.id}`);
+      console.log(`- latitude: ${item.latitude}`);
+      console.log(`- longitude: ${item.longitude}`);
+      console.log(`- category: ${item.crime_type || item.category}`);
+      console.log(`- severity/rating: ${item.safety_rating || item.lighting_score || "N/A"}`);
+      console.log(`- distance from route: ${item.distance_from_route} meters`);
+    });
+  }
 
   return {
     routeDistance,

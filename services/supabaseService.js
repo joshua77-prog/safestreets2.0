@@ -1,4 +1,5 @@
-import { supabase } from "../src/lib/supabase";
+import { supabase } from "../src/lib/supabase.js";
+import { getDatasetSafetyData, getDatasetSafetyDataByCity } from "./datasetLoader.js";
 
 // Memory cache of tables confirmed missing in the database to prevent repeated 404 network requests
 const missingTables = new Set();
@@ -78,33 +79,62 @@ async function safeQuery(tableName, queryFn) {
 }
 
 export async function getSafetyData() {
+  console.log("\n[SUPABASE]");
+  console.log("Querying safety_analysis...");
+
   try {
-    const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
-      builder.select("*").order("crime_count", { ascending: false })
+    const pages = [0, 1000, 2000, 3000, 4000, 5000];
+    const promises = pages.map((offset) =>
+      supabase
+        .from(PRIMARY_SAFETY_TABLE)
+        .select("*")
+        .range(offset, offset + 999)
+        .order("crime_count", { ascending: false })
     );
 
-    if (data.length > 0) {
-      return data.map(normalizeSafetyRecord).filter(Boolean);
-    }
-  } catch {}
+    const results = await Promise.all(promises);
+    let allRecords = [];
 
-  return [];
+    results.forEach((res) => {
+      if (res.data && Array.isArray(res.data)) {
+        allRecords.push(...res.data);
+      }
+    });
+
+    console.log(`Supabase returned: ${allRecords.length} records`);
+
+    if (allRecords.length > 0) {
+      const normalized = allRecords.map(normalizeSafetyRecord).filter(Boolean);
+      console.log(`\n[SAFETY DATA]`);
+      console.log(`Normalized safety reports: ${normalized.length}`);
+      return normalized;
+    }
+  } catch (err) {
+    console.error("[SUPABASE] Error querying safety_analysis:", err.message);
+  }
+
+  // Fallback to local 20,000 safety dataset ONLY if Supabase returns 0 records
+  console.log("[SUPABASE] Falling back to local dataset parser...");
+  return getDatasetSafetyData();
 }
 
 export async function getSafetyDataByCity(city) {
   if (!city) return getSafetyData();
 
   try {
-    const { data } = await safeQuery(PRIMARY_SAFETY_TABLE, (builder) =>
-      builder.select("*").eq("city", city).order("crime_count", { ascending: false })
-    );
+    const { data, error } = await supabase
+      .from(PRIMARY_SAFETY_TABLE)
+      .select("*")
+      .eq("city", city)
+      .limit(5000)
+      .order("crime_count", { ascending: false });
 
-    if (data.length > 0) {
+    if (!error && data && data.length > 0) {
       return data.map(normalizeSafetyRecord).filter(Boolean);
     }
   } catch {}
 
-  return [];
+  return getDatasetSafetyDataByCity(city);
 }
 
 export async function getNearbyLocations(latitude, longitude, radius = 5) {
@@ -127,15 +157,23 @@ export async function getNearbyLocations(latitude, longitude, radius = 5) {
 }
 
 export async function getCommunityReports() {
-  try {
-    const { data } = await safeQuery(PRIMARY_COMMUNITY_REPORTS_TABLE, (builder) =>
-      builder.select("*").order("created_at", { ascending: false })
-    );
+  console.log("\n[SUPABASE]");
+  console.log("Querying community_reports...");
 
-    if (data.length > 0) {
+  try {
+    const { data, error } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+
+    if (!error && data && data.length > 0) {
+      console.log(`Supabase community_reports returned: ${data.length} records`);
       return data.map(normalizeCommunityReport).filter(Boolean);
     }
-  } catch {}
+  } catch (err) {
+    console.error("[SUPABASE] Error querying community_reports:", err.message);
+  }
 
   return [];
 }

@@ -264,7 +264,7 @@ export default function SafetyScoreCard({ scoreResult }) {
                     <strong className="text-white">Final Safety Score Formula:</strong> Base Score (100) - Total Risk ({totalRisk}) = <span className="text-emerald-400 font-bold">{Math.round(finalScore)} / 100</span>
                   </p>
                   <p className="text-[11px] text-slate-400 pt-1">
-                    Search Radius: 1 km (1000m). Historical Records Processed: <span className="text-indigo-400 font-bold">{historicalRecordsCount}</span> (Density Multiplier: <span className="text-amber-400 font-bold">×{densityMultiplier.toFixed(1)}</span>). Community Reports Processed: <span className="text-blue-400 font-bold">{communityReportsCount}</span>.
+                    Historical Records Processed: <span className="text-indigo-400 font-bold">{historicalRecordsCount}</span> (Density Multiplier: <span className="text-amber-400 font-bold">×{densityMultiplier.toFixed(1)}</span>). Community Reports Processed: <span className="text-blue-400 font-bold">{communityReportsCount}</span>.
                   </p>
                 </div>
               </div>

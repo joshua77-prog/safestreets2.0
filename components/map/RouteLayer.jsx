@@ -18,33 +18,7 @@ export default function RouteLayer({
 
   return (
     <>
-      {/* Requirement 5: Semi-transparent Red Circles around Dynamic Danger Zones */}
-      {Array.isArray(dangerZones) && dangerZones.map((zone) => (
-        <Circle
-          key={zone.id}
-          center={[zone.latitude, zone.longitude]}
-          radius={zone.radius}
-          pathOptions={{
-            color: "#ef4444",
-            fillColor: "#f87171",
-            fillOpacity: 0.25,
-            weight: 1.5,
-            dashArray: "4, 6"
-          }}
-        >
-          <Popup>
-            <div className="text-xs font-sans space-y-1">
-              <div className="font-bold text-red-600 uppercase tracking-wider flex items-center gap-1">
-                ⚠ {zone.category}
-              </div>
-              <div className="text-slate-700">{zone.description}</div>
-              <div className="text-[10px] text-slate-500 font-semibold">
-                Danger Zone Radius: {zone.radius}m | Severity: {zone.severity}/100
-              </div>
-            </div>
-          </Popup>
-        </Circle>
-      ))}
+
 
       {routesAreIdentical ? (
         (() => {
