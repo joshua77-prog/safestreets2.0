@@ -3,11 +3,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
-import { callEmergencyContact as callEmergencyContactTwilio } from "./services/twilioService.js";
-import { callEmergencyContact as callEmergencyContactExotel } from "./services/exotelService.js";
+import { callEmergencyContact as callEmergencyContactTwilio, generateTwimlMessage, getTwilioFromNumber } from "./services/twilioService.js";
 import { sendEmergencyEmail } from "./services/emailService.js";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const app = express();
 app.use(express.json());
@@ -265,6 +264,7 @@ app.post("/api/sos", async (req, res) => {
     let dispatchedContact = primaryContact;
 
     const sosUserName = userRecord?.full_name || "A Safe Streets user";
+    const requestHost = req.get("host");
 
     // Prioritize primary contact if set, then try available contacts
     const sortedContacts = [...emergencyContacts].sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0));
@@ -272,7 +272,7 @@ app.post("/api/sos", async (req, res) => {
     for (const contact of sortedContacts) {
       if (!contact.number) continue;
       console.log(`[SOS] Step 9 — Attempting Twilio call to: ${contact.full_name || "Contact"} (${contact.number}) for user: ${sosUserName}`);
-      const result = await callEmergencyContactTwilio(contact.number, sosUserName);
+      const result = await callEmergencyContactTwilio(contact.number, sosUserName, createdAlert?.id, requestHost);
       twilioResult = result;
       dispatchedContact = contact;
 
@@ -314,11 +314,63 @@ app.post("/api/sos", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/sos/call — Direct Exotel call test (dev/debug only)
+// POST/GET /api/twilio/voice — Dynamic TwiML Endpoint for Outbound Calls
+// ─────────────────────────────────────────────────────────────
+app.all("/api/twilio/voice", async (req, res) => {
+  try {
+    const alertId = req.query.alertId || req.body?.alertId || req.query.alert_id || req.body?.alert_id;
+    const userId = req.query.userId || req.body?.userId || req.query.user_id || req.body?.user_id;
+    let userName = req.query.name || req.body?.name || req.query.userName || req.body?.userName;
+
+    // Retrieve user's full_name from Supabase database if not directly passed in parameters
+    if (!userName && alertId && supabase) {
+      const { data: alert } = await supabase
+        .from("sos_alerts")
+        .select("user_id")
+        .eq("id", alertId)
+        .single();
+
+      if (alert?.user_id) {
+        const { data: userRec } = await supabase
+          .from("users")
+          .select("full_name")
+          .eq("id", alert.user_id)
+          .single();
+
+        if (userRec?.full_name) {
+          userName = userRec.full_name;
+        }
+      }
+    } else if (!userName && userId && supabase) {
+      const { data: userRec } = await supabase
+        .from("users")
+        .select("full_name")
+        .eq("id", userId)
+        .single();
+
+      if (userRec?.full_name) {
+        userName = userRec.full_name;
+      }
+    }
+
+    console.log(`[Twilio TwiML] Generating dynamic TwiML for user: "${userName || "Unknown User"}" (Alert ID: ${alertId || "N/A"})`);
+
+    const twimlXml = generateTwimlMessage(userName);
+    res.type("text/xml").send(twimlXml);
+  } catch (err) {
+    console.error("[Twilio TwiML] Error generating TwiML:", err.message);
+    const twimlXml = generateTwimlMessage(null);
+    res.type("text/xml").send(twimlXml);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/sos/call — Direct Twilio call test endpoint
 // ─────────────────────────────────────────────────────────────
 app.post("/api/sos/call", async (req, res) => {
   try {
     const targetPhone = req.body?.emergencyNumber || req.body?.phoneNumber || req.body?.phone || req.body?.userNumber;
+    const userName = req.body?.userName || req.body?.name || "Test User";
 
     if (!targetPhone) {
       return res.status(400).json({
@@ -327,10 +379,11 @@ app.post("/api/sos/call", async (req, res) => {
       });
     }
 
-    const result = await callEmergencyContact(targetPhone);
+    const requestHost = req.get("host");
+    const result = await callEmergencyContactTwilio(targetPhone, userName, null, requestHost);
     return res.json(result);
   } catch (err) {
-    console.error("[Exotel Direct] Error:", err);
+    console.error("[Twilio Direct Call] Error:", err.message);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -369,4 +422,5 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ Safe Streets server running on http://localhost:${port}`);
+  console.log(`[Twilio Config] Active Outbound FROM Number: ${getTwilioFromNumber() || "NOT CONFIGURED"}`);
 });
