@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useEffect, useMemo } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card.jsx";
 import { Badge } from "../../../components/ui/badge.jsx";
 import { 
@@ -6,174 +8,294 @@ import {
   Navigation,
   AlertTriangle,
   Shield,
-  Star
+  Star,
+  Clock,
+  FileText,
+  Calendar
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const getMarkerColor = (safetyRating, reportType) => {
-  // Incident types get red regardless of rating
-  if (reportType === 'incident' || reportType === 'suspicious_activity') {
-    return 'bg-red-500';
+// Fix default marker assets for Leaflet in bundlers
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+/**
+ * Determine report safety classification and marker color strictly based on report data.
+ * RED: Risky / Unsafe (safety_rating <= 2 or Negative Report / incident categories)
+ * YELLOW: Neutral / Caution (safety_rating == 3 or moderate categories)
+ * GREEN: Safe / Positive (safety_rating >= 4 or Positive Report / safe zone categories)
+ */
+export function getReportSafetyStatus(report) {
+  const rating = Number(report.safety_rating);
+  const rType = String(report.report_type || '').toLowerCase();
+  const category = String(report.category || '').toLowerCase();
+
+  const isExplicitNegative =
+    rType.includes('negative') ||
+    rType.includes('incident') ||
+    rType.includes('suspicious') ||
+    category.includes('harassment') ||
+    category.includes('theft') ||
+    category.includes('assault') ||
+    category.includes('hazard') ||
+    category.includes('animal') ||
+    category.includes('drunk') ||
+    category.includes('isolated');
+
+  const isExplicitPositive =
+    rType.includes('positive') ||
+    rType.includes('safe_zone') ||
+    rType.includes('police') ||
+    category.includes('bright') ||
+    category.includes('busy') ||
+    category.includes('foot traffic') ||
+    category.includes('patrol') ||
+    category.includes('cctv') ||
+    category.includes('guarded');
+
+  if (isExplicitNegative || (!isNaN(rating) && rating <= 2)) {
+    return { color: '#ef4444', label: 'Unsafe / Risky', badgeClass: 'bg-rose-500 text-white', type: 'red' };
   }
-  // Poor lighting gets yellow
-  if (reportType === 'poor_lighting') {
-    return 'bg-yellow-500';
+  if (isExplicitPositive || (!isNaN(rating) && rating >= 4)) {
+    return { color: '#22c55e', label: 'Safe / Positive', badgeClass: 'bg-emerald-500 text-white', type: 'green' };
   }
-  // Safe zones and positive reports get green
-  if (reportType === 'safe_zone' || reportType === 'police_presence' || reportType === 'well_lit' || reportType === 'busy_area') {
-    return 'bg-green-500';
-  }
-  // Fallback to rating-based coloring
-  if (safetyRating >= 4) return 'bg-green-500';
-  if (safetyRating >= 3) return 'bg-yellow-500';
-  return 'bg-red-500';
+  return { color: '#eab308', label: 'Neutral / Caution', badgeClass: 'bg-amber-500 text-white', type: 'yellow' };
+}
+
+// Leaflet DivIcons for Red, Yellow, Green report markers with animated blinking dot + pulsing outer glow
+const markerIcons = {
+  red: L.divIcon({
+    className: "custom-report-marker-red",
+    html: `
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;">
+        <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background-color: #ef4444; opacity: 0.45; animation: reportDotPulse 1.8s infinite ease-out;"></div>
+        <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background-color: #ef4444; border: 2.5px solid #ffffff; box-shadow: 0 0 12px rgba(239,68,68,0.9); animation: reportDotBlink 1.4s infinite ease-in-out;"></div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  }),
+  yellow: L.divIcon({
+    className: "custom-report-marker-yellow",
+    html: `
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;">
+        <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background-color: #eab308; opacity: 0.45; animation: reportDotPulse 1.8s infinite ease-out;"></div>
+        <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background-color: #eab308; border: 2.5px solid #ffffff; box-shadow: 0 0 12px rgba(234,179,8,0.9); animation: reportDotBlink 1.4s infinite ease-in-out;"></div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  }),
+  green: L.divIcon({
+    className: "custom-report-marker-green",
+    html: `
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;">
+        <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background-color: #22c55e; opacity: 0.45; animation: reportDotPulse 1.8s infinite ease-out;"></div>
+        <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background-color: #22c55e; border: 2.5px solid #ffffff; box-shadow: 0 0 12px rgba(34,197,94,0.9); animation: reportDotBlink 1.4s infinite ease-in-out;"></div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  })
 };
 
-export default function SafetyMap({ reports }) {
+function MapController({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && Number.isFinite(center[0]) && Number.isFinite(center[1])) {
+      map.flyTo(center, map.getZoom() || 12, { duration: 0.8 });
+    }
+  }, [center, map]);
+  return null;
+}
+
+export default function SafetyMap({ reports = [] }) {
+  // Filter valid reports containing real coordinates
+  const validReports = useMemo(() => {
+    if (!Array.isArray(reports)) return [];
+    return reports.filter(r => 
+      r && 
+      r.latitude !== null && 
+      r.latitude !== undefined && 
+      !isNaN(Number(r.latitude)) && 
+      r.longitude !== null && 
+      r.longitude !== undefined && 
+      !isNaN(Number(r.longitude)) &&
+      Number(r.latitude) !== 0 &&
+      Number(r.longitude) !== 0
+    );
+  }, [reports]);
+
+  // Calculate dynamic center coordinate
+  const mapCenter = useMemo(() => {
+    if (validReports.length > 0) {
+      // Use latest report's coordinates as focal point
+      const latest = validReports[0];
+      return [Number(latest.latitude), Number(latest.longitude)];
+    }
+    // Default fallback center (Chennai)
+    return [13.0827, 80.2707];
+  }, [validReports]);
+
+  // Count reports by safety status
+  const safeCount = validReports.filter(r => getReportSafetyStatus(r).type === 'green').length;
+  const neutralCount = validReports.filter(r => getReportSafetyStatus(r).type === 'yellow').length;
+  const riskCount = validReports.filter(r => getReportSafetyStatus(r).type === 'red').length;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6"
     >
-      {/* Map Placeholder */}
-      <Card className="shadow-lg border-0">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-500">
+      {/* Real Geospatial Leaflet Map */}
+      <Card className="shadow-2xl border-0 rounded-3xl overflow-hidden glass">
+        <CardHeader className="bg-slate-900 text-white p-5 flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-3 text-lg font-black tracking-tight">
+            <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-500 shadow-lg shadow-emerald-500/30">
               <Navigation className="w-5 h-5 text-white" />
             </div>
-            Safety Map
+            Geospatial Safety View
           </CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 font-bold text-xs">
+              Live Reports: {validReports.length}
+            </Badge>
+          </div>
         </CardHeader>
+
         <CardContent className="p-0">
-          <div className="relative h-96 bg-gradient-to-br from-blue-50 to-green-50 rounded-b-lg overflow-hidden">
-            {/* Map Background */}
-            <div className="absolute inset-0 opacity-20">
-              <div className="w-full h-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200" />
-              {/* Grid lines to simulate map */}
-              <div className="absolute inset-0">
-                {Array(10).fill(0).map((_, i) => (
-                  <div key={`v-${i}`} className="absolute top-0 bottom-0 border-l border-slate-300" style={{left: `${i * 10}%`}} />
-                ))}
-                {Array(8).fill(0).map((_, i) => (
-                  <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-slate-300" style={{top: `${i * 12.5}%`}} />
-                ))}
-              </div>
-            </div>
-            
-            {/* Map Markers */}
-            {reports.map((report, index) => (
-              <motion.div
-                key={report.id}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: index * 0.1 }}
-                className="absolute transform -translate-x-1/2 -translate-y-full cursor-pointer group"
-                style={{
-                  left: `${20 + (index % 5) * 15 + Math.random() * 10}%`,
-                  top: `${30 + Math.floor(index / 5) * 20 + Math.random() * 10}%`
-                }}
-              >
-                <div className={`w-4 h-4 rounded-full ${getMarkerColor(report.safety_rating, report.report_type)} shadow-lg border-2 border-white`}>
-                  <div className="absolute inset-0 rounded-full animate-ping bg-current opacity-25" />
-                </div>
-                
-                {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                  <div className="bg-white rounded-lg shadow-xl border p-3 whitespace-nowrap">
-                    <div className="text-sm font-semibold text-slate-900 mb-1">
-                      {report.location}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge className="text-xs">
-                        {report.report_type.replace(/_/g, ' ')}
-                      </Badge>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-500 fill-current" />
-                        <span>{report.safety_rating}/5</span>
+          <div className="relative h-[480px] w-full bg-slate-100 overflow-hidden">
+            <MapContainer 
+              center={mapCenter} 
+              zoom={12} 
+              scrollWheelZoom={true}
+              style={{ height: "100%", width: "100%" }}
+            >
+              <TileLayer 
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+              <MapController center={mapCenter} />
+
+              {/* Render real report markers */}
+              {validReports.map((report, idx) => {
+                const status = getReportSafetyStatus(report);
+                const icon = markerIcons[status.type];
+                const lat = Number(report.latitude);
+                const lon = Number(report.longitude);
+                const categoryName = report.category || report.report_type || "Safety Incident";
+                const rating = Number(report.safety_rating || 3);
+                const formattedDate = report.created_date ? new Date(report.created_date).toLocaleString() : "Recently logged";
+
+                return (
+                  <Marker 
+                    key={report.id || `report-${idx}-${lat}-${lon}`}
+                    position={[lat, lon]}
+                    icon={icon}
+                  >
+                    <Popup className="custom-report-popup">
+                      <div className="p-1 space-y-2.5 max-w-xs">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                          <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${status.badgeClass}`}>
+                            {status.label}
+                          </span>
+                          <div className="flex items-center gap-1 text-amber-500 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                            <span>{rating}/5</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-black text-slate-900 text-sm leading-snug">
+                            {categoryName}
+                          </h4>
+                          <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{report.location || `${lat.toFixed(4)}, ${lon.toFixed(4)}`}</span>
+                          </p>
+                        </div>
+
+                        {report.description && (
+                          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs font-medium text-slate-700 leading-relaxed flex items-start gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <span className="line-clamp-3">{report.description}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-100">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            {report.time_cycle || "Day"}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            {formattedDate}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white"></div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-            
-            {/* Map Legend */}
-            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg">
-              <h4 className="text-sm font-semibold text-slate-900 mb-3">Safety Legend</h4>
-              <div className="space-y-2 text-xs">
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </MapContainer>
+
+            {/* Map Legend Floating Banner */}
+            <div className="absolute bottom-4 left-4 z-[400] bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-slate-200/80 space-y-2">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Report Safety Legend</h4>
+              <div className="flex flex-col gap-1.5 text-xs font-bold text-slate-700">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <span className="text-slate-700">Safe Zone (4-5★)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <span className="text-slate-700">Caution (2-3★)</span>
+                  <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></div>
+                  <span>Safe / Positive (4-5★)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                  <span className="text-slate-700">Unsafe (1★)</span>
+                  <div className="w-3 h-3 rounded-full bg-amber-500 shadow-sm"></div>
+                  <span>Neutral / Caution (3★)</span>
                 </div>
-              </div>
-            </div>
-            
-            {/* Map Controls */}
-            <div className="absolute top-4 right-4 flex flex-col gap-2">
-              <button className="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors">
-                <span className="text-lg font-bold text-slate-700">+</span>
-              </button>
-              <button className="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors">
-                <span className="text-lg font-bold text-slate-700">-</span>
-              </button>
-            </div>
-            
-            {/* Center Message */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center p-8 bg-white/80 backdrop-blur-sm rounded-xl shadow-lg">
-                <MapPin className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-slate-700 mb-2">Interactive Safety Map</h3>
-                <p className="text-sm text-slate-600 max-w-sm">
-                  In the full version, this would be an interactive map showing real-time safety data
-                  with clustering, route overlays, and detailed location information.
-                </p>
-                <div className="mt-4 text-xs text-slate-500">
-                  {reports.length} safety reports plotted
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></div>
+                  <span>Risky / Unsafe (1-2★)</span>
                 </div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
-      
-      {/* Map Statistics */}
+
+      {/* Real Map Statistics Grid */}
       <div className="grid grid-cols-3 gap-4">
-        <Card>
+        <Card className="glass border-emerald-100 bg-emerald-50/30">
           <CardContent className="p-4 text-center">
-            <Shield className="w-6 h-6 text-green-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating >= 4).length}
+            <Shield className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+            <div className="text-2xl font-black text-slate-900">
+              {safeCount}
             </div>
-            <div className="text-xs text-slate-500">Safe Zones</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Safe Zones</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass border-amber-100 bg-amber-50/30">
           <CardContent className="p-4 text-center">
-            <AlertTriangle className="w-6 h-6 text-yellow-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating === 3).length}
+            <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto mb-1" />
+            <div className="text-2xl font-black text-slate-900">
+              {neutralCount}
             </div>
-            <div className="text-xs text-slate-500">Neutral Areas</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Neutral Areas</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass border-rose-100 bg-rose-50/30">
           <CardContent className="p-4 text-center">
-            <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating <= 2).length}
+            <AlertTriangle className="w-6 h-6 text-rose-500 mx-auto mb-1" />
+            <div className="text-2xl font-black text-slate-900">
+              {riskCount}
             </div>
-            <div className="text-xs text-slate-500">Risk Areas</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Risk Areas</div>
           </CardContent>
         </Card>
       </div>

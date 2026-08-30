@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button.jsx";
 import { Input } from "../../../components/ui/input.jsx";
 import { Label } from "../../../components/ui/label.jsx";
@@ -17,10 +17,15 @@ import {
   ThumbsDown,
   Edit3,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Search,
+  Navigation,
+  Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../../../src/lib/supabase";
+import { geocodeAddress, searchAddress } from "../../../services/geocoding.js";
+import { addCommunityReport } from "../../../services/supabaseService.js";
 
 const POSITIVE_REPORTS = [
   "Brightly Lit Street",
@@ -59,14 +64,30 @@ const TIME_OPTIONS = [
 
 export default function ReportForm({ onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
-    location: "",
-    latitude: null,
-    longitude: null,
     safety_rating: 3,
     report_type: "",
     description: "",
     time_of_day: ""
   });
+
+  // Location Selection Mode: "current" vs "manual"
+  const [locationMode, setLocationMode] = useState("current");
+
+  // Option A State - Current GPS Location
+  const [currentLat, setCurrentLat] = useState(null);
+  const [currentLon, setCurrentLon] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState("");
+
+  // Option B State - Enter Incident Location & Geocoding
+  const [manualAddress, setManualAddress] = useState("");
+  const [geocodedAddress, setGeocodedAddress] = useState(null);
+  const [manualLat, setManualLat] = useState(null);
+  const [manualLon, setManualLon] = useState(null);
+  const [geocodingLoading, setGeocodingLoading] = useState(false);
+  const [geocodingError, setGeocodingError] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [positiveSelection, setPositiveSelection] = useState("");
   const [negativeSelection, setNegativeSelection] = useState("");
@@ -77,21 +98,106 @@ export default function ReportForm({ onSubmit, onCancel }) {
   const [successMessage, setSuccessMessage] = useState("");
   const [supabaseError, setSupabaseError] = useState("");
 
+  // Auto fetch current location on load if Option A is active
+  useEffect(() => {
+    if (locationMode === "current" && currentLat === null) {
+      getCurrentLocation();
+    }
+  }, [locationMode]);
+
   const getCurrentLocation = () => {
+    setGpsLoading(true);
+    setGpsError("");
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setFormData(prev => ({
-            ...prev,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            location: "G-POS Locked: " + position.coords.latitude.toFixed(4) + ", " + position.coords.longitude.toFixed(4)
-          }));
+          setCurrentLat(position.coords.latitude);
+          setCurrentLon(position.coords.longitude);
+          setGpsLoading(false);
         },
         (error) => {
-           console.error("Location lock failed:", error);
-        }
+          console.error("Location lock failed:", error);
+          setGpsError("Unable to acquire GPS location. Please ensure browser permissions are allowed.");
+          setGpsLoading(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
       );
+    } else {
+      setGpsError("Geolocation is not supported by your browser.");
+      setGpsLoading(false);
+    }
+  };
+
+  // Handle live typing in manual address box & debounced suggestions
+  const handleAddressInputChange = (val) => {
+    setManualAddress(val);
+    setGeocodingError("");
+    setGeocodedAddress(null);
+    setManualLat(null);
+    setManualLon(null);
+
+    if (!val || val.trim().length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  // Debounced suggestion fetch
+  useEffect(() => {
+    if (!manualAddress || manualAddress.trim().length < 2) return;
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      try {
+        const results = await searchAddress(manualAddress.trim());
+        if (active) {
+          setSuggestions(results || []);
+          setShowSuggestions((results || []).length > 0);
+        }
+      } catch {
+        if (active) setSuggestions([]);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [manualAddress]);
+
+  // Execute explicit geocoding lookup for manual address
+  const handleFindLocation = async (addressQuery) => {
+    const query = addressQuery || manualAddress;
+    if (!query || !query.trim()) {
+      setGeocodingError("Please enter an address or place name.");
+      return null;
+    }
+
+    setGeocodingLoading(true);
+    setGeocodingError("");
+    setShowSuggestions(false);
+
+    try {
+      const res = await geocodeAddress(query.trim());
+      if (res && res.latitude && res.longitude) {
+        setManualLat(res.latitude);
+        setManualLon(res.longitude);
+        setGeocodedAddress(res.address);
+        setGeocodingLoading(false);
+        return res;
+      } else {
+        setManualLat(null);
+        setManualLon(null);
+        setGeocodedAddress(null);
+        setGeocodingError("Location could not be found. Please enter a more specific location.");
+        setGeocodingLoading(false);
+        return null;
+      }
+    } catch (err) {
+      console.error("Geocoding exception:", err);
+      setGeocodingError("Location could not be found. Please enter a more specific location.");
+      setGeocodingLoading(false);
+      return null;
     }
   };
 
@@ -148,13 +254,50 @@ export default function ReportForm({ onSubmit, onCancel }) {
       return;
     }
 
-    if (formData.latitude === null || formData.latitude === undefined || isNaN(Number(formData.latitude))) {
-      setValidationError("Latitude coordinate is missing. Please click the target icon to lock your position.");
-      return;
+    let finalLat = null;
+    let finalLon = null;
+    let finalLocationName = "";
+
+    if (locationMode === "current") {
+      if (currentLat === null || currentLon === null || isNaN(Number(currentLat)) || isNaN(Number(currentLon))) {
+        setValidationError("Current GPS location not locked. Please click 'Detect Location' or check location permissions.");
+        return;
+      }
+      finalLat = Number(currentLat);
+      finalLon = Number(currentLon);
+      finalLocationName = `Current GPS (${finalLat.toFixed(4)}, ${finalLon.toFixed(4)})`;
+    } else {
+      // Manual address mode
+      if (!manualAddress || !manualAddress.trim()) {
+        setValidationError("Please enter an incident address or place name.");
+        return;
+      }
+
+      let lat = manualLat;
+      let lon = manualLon;
+      let addr = geocodedAddress;
+
+      // If user typed an address but hasn't clicked Find Location yet, geocode now
+      if (lat === null || lon === null) {
+        setSubmitting(true);
+        const geoRes = await handleFindLocation(manualAddress.trim());
+        setSubmitting(false);
+        if (!geoRes || !geoRes.latitude || !geoRes.longitude) {
+          setValidationError("Location could not be found. Please enter a more specific location.");
+          return;
+        }
+        lat = geoRes.latitude;
+        lon = geoRes.longitude;
+        addr = geoRes.address;
+      }
+
+      finalLat = Number(lat);
+      finalLon = Number(lon);
+      finalLocationName = addr || manualAddress.trim();
     }
 
-    if (formData.longitude === null || formData.longitude === undefined || isNaN(Number(formData.longitude))) {
-      setValidationError("Longitude coordinate is missing. Please click the target icon to lock your position.");
+    if (!finalLat || !finalLon || isNaN(finalLat) || isNaN(finalLon)) {
+      setValidationError("Location coordinates are invalid. Please select or verify your report location.");
       return;
     }
 
@@ -197,34 +340,20 @@ export default function ReportForm({ onSubmit, onCancel }) {
         user_id: user.id,
         report_type: reportType,
         category: category,
-        latitude: Number(formData.latitude),
-        longitude: Number(formData.longitude),
+        latitude: finalLat,
+        longitude: finalLon,
+        location: finalLocationName,
         time_cycle: timeCycleMap[formData.time_of_day] || formData.time_of_day,
         safety_rating: Number(formData.safety_rating),
         intelligence_briefing: formData.description || "",
       };
 
-      const { data: insertedData, error: insertError } = await supabase
-        .from("community_reports")
-        .insert(payload)
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error("Supabase error inserting into community_reports table:", insertError);
-        setSupabaseError("Unable to save report to database: " + (insertError.message || "Unknown Supabase error"));
-        setSubmitting(false);
-        return;
-      }
-
+      const insertedData = await addCommunityReport(payload);
       console.log("Report stored in community_reports table successfully:", insertedData);
-
       setSuccessMessage("Observation report saved successfully!");
+      if (onSubmit) await onSubmit(insertedData || payload);
 
       setFormData({
-        location: "",
-        latitude: null,
-        longitude: null,
         safety_rating: 3,
         report_type: "",
         description: "",
@@ -234,10 +363,10 @@ export default function ReportForm({ onSubmit, onCancel }) {
       setNegativeSelection("");
       setIsOtherSelected(false);
       setCustomReportText("");
-
-      if (onSubmit) {
-        await onSubmit(insertedData || payload);
-      }
+      setManualAddress("");
+      setGeocodedAddress(null);
+      setManualLat(null);
+      setManualLon(null);
     } catch (err) {
       console.error("Unexpected error submitting report:", err);
       setSupabaseError("An unexpected error occurred: " + (err.message || "Please try again."));
@@ -290,26 +419,181 @@ export default function ReportForm({ onSubmit, onCancel }) {
           <div className="grid md:grid-cols-2 gap-6 md:gap-8">
             {/* Left Column */}
             <div className="space-y-6">
-              {/* Positional Core */}
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Positional Core *</Label>
-                <div className="relative group">
-                  <Input
-                    value={formData.location}
-                    onChange={(e) => setFormData({...formData, location: e.target.value})}
-                    placeholder="Enter sector address..."
-                    className="pl-12 py-5 glass border-slate-200 focus:border-emerald-500/50 rounded-2xl transition-all font-bold text-sm"
-                    required
-                  />
-                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+              {/* Report Location Switcher */}
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Report Location *</Label>
+                
+                {/* Two Option Selection Cards */}
+                <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
-                    onClick={getCurrentLocation}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:scale-110 transition-transform"
+                    onClick={() => {
+                      setLocationMode("current");
+                      setValidationError("");
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                      locationMode === "current"
+                        ? "bg-slate-900 border-slate-900 text-white shadow-lg scale-[1.02]"
+                        : "bg-white/60 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
                   >
-                    <Target className="w-4 h-4" />
+                    <div className="flex items-center justify-between w-full mb-1">
+                      <Navigation className={`w-4 h-4 ${locationMode === "current" ? "text-emerald-400" : "text-slate-400"}`} />
+                      <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${locationMode === "current" ? "border-emerald-400 bg-emerald-400" : "border-slate-300"}`}>
+                        {locationMode === "current" && <Check className="w-2.5 h-2.5 text-slate-900 stroke-[3]" />}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black tracking-tight">Use Current Location</p>
+                      <p className={`text-[10px] font-medium ${locationMode === "current" ? "text-slate-300" : "text-slate-500"}`}>📍 Current GPS location</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationMode("manual");
+                      setValidationError("");
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                      locationMode === "manual"
+                        ? "bg-slate-900 border-slate-900 text-white shadow-lg scale-[1.02]"
+                        : "bg-white/60 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full mb-1">
+                      <MapPin className={`w-4 h-4 ${locationMode === "manual" ? "text-emerald-400" : "text-slate-400"}`} />
+                      <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${locationMode === "manual" ? "border-emerald-400 bg-emerald-400" : "border-slate-300"}`}>
+                        {locationMode === "manual" && <Check className="w-2.5 h-2.5 text-slate-900 stroke-[3]" />}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black tracking-tight">Enter Incident Location</p>
+                      <p className={`text-[10px] font-medium ${locationMode === "manual" ? "text-slate-300" : "text-slate-500"}`}>Specify address / place</p>
+                    </div>
                   </button>
                 </div>
+
+                {/* Option A View: Current GPS */}
+                {locationMode === "current" && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Target className="w-4 h-4 text-emerald-600 animate-pulse" />
+                        Current Position Status
+                      </span>
+                      <button
+                        type="button"
+                        onClick={getCurrentLocation}
+                        disabled={gpsLoading}
+                        className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
+                      >
+                        {gpsLoading ? "Acquiring..." : "Refresh Position"}
+                      </button>
+                    </div>
+
+                    {currentLat !== null && currentLon !== null ? (
+                      <div className="bg-white p-3 rounded-xl border border-emerald-200/80 shadow-sm space-y-1">
+                        <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> GPS Locked
+                        </div>
+                        <div className="text-xs font-mono font-bold text-slate-800">
+                          Latitude: <span className="text-emerald-700">{currentLat.toFixed(6)}</span>
+                        </div>
+                        <div className="text-xs font-mono font-bold text-slate-800">
+                          Longitude: <span className="text-emerald-700">{currentLon.toFixed(6)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 italic">
+                        {gpsLoading ? "Detecting browser GPS coordinates..." : gpsError || "Click 'Refresh Position' to acquire GPS location."}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Option B View: Enter Address & Dynamic Geocoding */}
+                {locationMode === "manual" && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3 relative animate-in fade-in duration-200">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                        Incident Address / Area Name
+                      </Label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            value={manualAddress}
+                            onChange={(e) => handleAddressInputChange(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleFindLocation();
+                              }
+                            }}
+                            placeholder="e.g. Adyar, Chennai or T Nagar..."
+                            className="pl-9 py-2.5 text-xs font-bold bg-white border-slate-300 focus:border-emerald-500 rounded-xl"
+                          />
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => handleFindLocation()}
+                          disabled={geocodingLoading || !manualAddress.trim()}
+                          className="bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold px-4 rounded-xl shrink-0"
+                        >
+                          {geocodingLoading ? "Finding..." : "Find Location"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Autocomplete Dropdown */}
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div className="absolute left-4 right-4 top-20 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+                        {suggestions.map((item) => (
+                          <button
+                            key={item.place_id}
+                            type="button"
+                            onClick={() => {
+                              setManualAddress(item.display_name);
+                              setManualLat(parseFloat(item.lat));
+                              setManualLon(parseFloat(item.lon));
+                              setGeocodedAddress(item.display_name);
+                              setShowSuggestions(false);
+                              setGeocodingError("");
+                            }}
+                            className="w-full text-left p-2.5 text-xs font-medium text-slate-700 hover:bg-emerald-50 hover:text-emerald-900 transition-colors"
+                          >
+                            {item.display_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Geocoding Error Message */}
+                    {geocodingError && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>{geocodingError}</span>
+                      </div>
+                    )}
+
+                    {/* Resolved Location Output Display */}
+                    {manualLat !== null && manualLon !== null && (
+                      <div className="bg-white p-3 rounded-xl border border-emerald-300 shadow-sm space-y-1">
+                        <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Resolved Location Confirmed
+                        </div>
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          {geocodedAddress || manualAddress}
+                        </div>
+                        <div className="text-[11px] font-mono font-bold text-slate-600 flex gap-3 pt-0.5">
+                          <span>Lat: <strong className="text-slate-900">{manualLat.toFixed(6)}</strong></span>
+                          <span>Lon: <strong className="text-slate-900">{manualLon.toFixed(6)}</strong></span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Safety Index Rating */}
@@ -460,7 +744,7 @@ export default function ReportForm({ onSubmit, onCancel }) {
             </button>
             <Button
               type="submit"
-              disabled={submitting || !formData.location || !formData.report_type || !formData.time_of_day}
+              disabled={submitting || !formData.report_type || !formData.time_of_day || (locationMode === "current" ? (currentLat === null || currentLon === null) : !manualAddress.trim())}
               className="flex-[2] btn-premium btn-primary py-3.5 h-auto shadow-xl shadow-emerald-500/20"
             >
               {submitting ? (

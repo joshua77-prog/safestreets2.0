@@ -164,7 +164,7 @@ export default function SafetyReports() {
               </TabsContent>
               
               <TabsContent value="map" className="mt-0 focus-visible:outline-none">
-                <div className="premium-card glass border-white/80 overflow-hidden h-[600px] shadow-2xl">
+                <div className="premium-card glass border-white/80 overflow-hidden min-h-[600px] shadow-2xl">
                    <SafetyMap reports={reports} />
                 </div>
               </TabsContent>

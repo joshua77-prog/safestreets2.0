@@ -24,14 +24,22 @@ function normalizeSafetyRecord(record) {
 function normalizeCommunityReport(record) {
   if (!record) return null;
 
+  const lat = Number(record.latitude);
+  const lon = Number(record.longitude);
+
   return {
     ...record,
-    latitude: Number(record.latitude),
-    longitude: Number(record.longitude),
-    location: record.location || `Lat: ${Number(record.latitude).toFixed(4)}, Lon: ${Number(record.longitude).toFixed(4)}`,
+    id: record.id,
+    latitude: lat,
+    longitude: lon,
+    location: record.location || record.address || (Number.isFinite(lat) && Number.isFinite(lon) ? `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}` : "Unknown Location"),
     description: record.intelligence_briefing || record.description || "",
+    intelligence_briefing: record.intelligence_briefing || record.description || "",
     report_type: record.report_type || record.issue_type || "Incident",
-    created_date: record.created_at || new Date().toISOString()
+    category: record.category || record.report_type || record.issue_type || "Incident",
+    safety_rating: Number(record.safety_rating ?? 3),
+    time_cycle: record.time_cycle || "Day",
+    created_date: record.created_at || record.created_date || new Date().toISOString()
   };
 }
 
@@ -188,29 +196,91 @@ export async function addCommunityReport(report) {
       throw err;
     }
 
-    const payload = {
+    const lat = Number(report.latitude);
+    const lon = Number(report.longitude);
+    const briefingText = report.intelligence_briefing || report.description || "";
+    const reportTypeStr = report.report_type || "Incident";
+    const categoryStr = report.category || report.report_type || "Incident";
+    const userIdentifier = user.email || user.id || "Anonymous";
+
+    // Tier 1: Full extended schema (user_id, report_type, category, time_cycle, safety_rating, intelligence_briefing)
+    const payload1 = {
       user_id: user.id,
-      report_type: report.report_type,
-      category: report.category,
-      latitude: Number(report.latitude),
-      longitude: Number(report.longitude),
-      time_cycle: report.time_cycle,
-      safety_rating: Number(report.safety_rating),
-      intelligence_briefing: report.intelligence_briefing || report.description || ""
+      report_type: reportTypeStr,
+      category: categoryStr,
+      latitude: lat,
+      longitude: lon,
+      location: report.location || `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`,
+      time_cycle: report.time_cycle || "Day",
+      safety_rating: Number(report.safety_rating || 3),
+      intelligence_briefing: briefingText
     };
 
-    const { data, error } = await supabase
+    const { data: d1, error: e1 } = await supabase
       .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
-      .insert(payload)
+      .insert(payload1)
       .select()
       .single();
 
-    if (error) {
-      console.error("Supabase community_reports insert error:", error);
-      throw error;
-    }
+    if (!e1 && d1) return normalizeCommunityReport(d1);
 
-    return normalizeCommunityReport(data);
+    console.warn("Supabase tier 1 insert notice:", e1?.message);
+
+    // Tier 2: Try intelligence_briefing + reported_by + issue_type schema
+    const payload2 = {
+      latitude: lat,
+      longitude: lon,
+      issue_type: categoryStr,
+      intelligence_briefing: briefingText,
+      reported_by: userIdentifier
+    };
+
+    const { data: d2, error: e2 } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .insert(payload2)
+      .select()
+      .single();
+
+    if (!e2 && d2) return normalizeCommunityReport(d2);
+
+    console.warn("Supabase tier 2 insert notice:", e2?.message);
+
+    // Tier 3: Try description + reported_by + issue_type schema
+    const payload3 = {
+      latitude: lat,
+      longitude: lon,
+      issue_type: categoryStr,
+      description: briefingText,
+      reported_by: userIdentifier
+    };
+
+    const { data: d3, error: e3 } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .insert(payload3)
+      .select()
+      .single();
+
+    if (!e3 && d3) return normalizeCommunityReport(d3);
+
+    console.warn("Supabase tier 3 insert notice:", e3?.message);
+
+    // Tier 4: Minimalist schema (latitude, longitude, issue_type)
+    const payload4 = {
+      latitude: lat,
+      longitude: lon,
+      issue_type: categoryStr
+    };
+
+    const { data: d4, error: e4 } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .insert(payload4)
+      .select()
+      .single();
+
+    if (!e4 && d4) return normalizeCommunityReport(d4);
+
+    console.error("All Supabase community_reports insert tiers failed:", e1 || e2 || e3 || e4);
+    throw e1 || e2 || e3 || e4;
   } catch (err) {
     console.error("Failed to add community report:", err);
     throw err;

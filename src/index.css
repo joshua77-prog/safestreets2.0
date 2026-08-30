@@ -112,10 +112,40 @@
     }
   }
 
+  @keyframes reportDotPulse {
+    0% {
+      transform: scale(0.6);
+      opacity: 0.9;
+    }
+    70% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  @keyframes reportDotBlink {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.25;
+      transform: scale(0.85);
+    }
+  }
+
   .custom-live-blue-dot,
   .custom-source-pin,
-  .custom-dest-pin {
+  .custom-dest-pin,
+  .custom-report-marker-red,
+  .custom-report-marker-yellow,
+  .custom-report-marker-green {
     background: transparent !important;
     border: none !important;
   }
 }
+
