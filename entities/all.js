@@ -1,8 +1,8 @@
-import safetyReportsSeed from './safetyreports.json';
-import emergencyContactsSeed from './emergencycontact.json';
-import sosAlertSeed from './sosalert.json';
-import { supabase } from '../src/lib/supabase';
-import { getCommunityReports, addCommunityReport } from '../services/supabaseService';
+import safetyReportsSeed from './safetyreports.json' with { type: 'json' };
+import emergencyContactsSeed from './emergencycontact.json' with { type: 'json' };
+import sosAlertSeed from './sosalert.json' with { type: 'json' };
+import { supabase } from '../src/lib/supabase.js';
+import { getCommunityReports, addCommunityReport } from '../services/supabaseService.js';
 
 function readStore(key, seed) {
     const raw = localStorage.getItem(key);
@@ -315,146 +315,187 @@ export const EmergencyContact = {
 
 	async list() {
 		const userId = await getAuthUserId();
-		if (!userId) {
-			this.clearCache();
-			return [];
-		}
+		const localItems = readStore('emergency_contacts', emergencyContactsSeed);
 
-		try {
-			const { data, error } = await supabase
-				.from('emergency_contacts')
-				.select('*')
-				.eq('user_id', userId)
-				.order('created_at', { ascending: false });
+		if (userId) {
+			try {
+				const { data, error } = await supabase
+					.from('emergency_contacts')
+					.select('*')
+					.eq('user_id', userId)
+					.order('created_at', { ascending: false });
 
-			if (!error && Array.isArray(data)) {
-				return data.map((item) => ({
-					id: item.id,
-					user_id: item.user_id,
-					full_name: item.full_name || item.name || '',
-					name: item.full_name || item.name || '',
-					number: item.number || item.phone || '',
-					phone: item.number || item.phone || '',
-					email: item.email || '',
-					relationship: item.relationship || 'other',
-					is_primary: item.is_primary ?? false,
-					notify_sms: item.notify_sms ?? true,
-					notify_email: item.notify_email ?? true,
-					created_at: item.created_at
-				}));
-			} else if (error) {
-				console.warn("Supabase emergency_contacts read error:", error);
+				if (!error && Array.isArray(data)) {
+					const dbMap = new Map();
+					data.forEach((item) => {
+						dbMap.set(item.id, {
+							id: item.id,
+							user_id: item.user_id,
+							full_name: item.full_name || item.name || '',
+							name: item.full_name || item.name || '',
+							number: item.number || item.phone || '',
+							phone: item.number || item.phone || '',
+							email: item.email || '',
+							relationship: item.relationship || 'other',
+							is_primary: item.is_primary ?? false,
+							notify_sms: item.notify_sms ?? true,
+							notify_email: item.notify_email ?? true,
+							created_at: item.created_at
+						});
+					});
+
+					localItems.forEach((item) => {
+						if (!dbMap.has(item.id)) {
+							dbMap.set(item.id, item);
+						}
+					});
+
+					return Array.from(dbMap.values());
+				} else if (error) {
+					console.warn("Supabase emergency_contacts read error:", error);
+				}
+			} catch (err) {
+				console.warn("Supabase emergency_contacts exception:", err);
 			}
-		} catch (err) {
-			console.warn("Supabase emergency_contacts exception:", err);
 		}
 
-		return [];
+		return localItems;
 	},
 
 	async create(data) {
 		const userId = await getAuthUserId();
-		if (!userId) {
-			throw new Error("User authentication required to save emergency contacts.");
-		}
 
 		const fullName = data.full_name || data.name || '';
 		const phoneNumber = data.number || data.phone || '';
 		const email = data.email || '';
 		const relationship = data.relationship || 'other';
 
-		const payload = {
-			user_id: userId,
+		let newContactItem = {
+			id: generateId('contact'),
+			user_id: userId || 'local',
 			full_name: fullName,
+			name: fullName,
 			number: phoneNumber,
+			phone: phoneNumber,
 			email: email,
-			relationship: relationship
+			relationship: relationship,
+			is_primary: data.is_primary ?? false,
+			notify_sms: data.notify_sms ?? true,
+			notify_email: data.notify_email ?? true,
+			created_at: new Date().toISOString()
 		};
 
-		const { data: inserted, error } = await supabase
-			.from('emergency_contacts')
-			.insert(payload)
-			.select()
-			.single();
+		if (userId) {
+			try {
+				const payload = {
+					user_id: userId,
+					full_name: fullName,
+					number: phoneNumber,
+					email: email,
+					relationship: relationship
+				};
 
-		if (error) {
-			console.error("Failed to insert emergency contact to Supabase:", error);
-			throw error;
+				const { data: inserted, error } = await supabase
+					.from('emergency_contacts')
+					.insert(payload)
+					.select()
+					.single();
+
+				if (!error && inserted) {
+					newContactItem = {
+						...newContactItem,
+						id: inserted.id,
+						user_id: inserted.user_id,
+						full_name: inserted.full_name || fullName,
+						name: inserted.full_name || fullName,
+						number: inserted.number || phoneNumber,
+						phone: inserted.number || phoneNumber,
+						email: inserted.email || email,
+						relationship: inserted.relationship || relationship,
+						created_at: inserted.created_at || newContactItem.created_at
+					};
+				} else if (error) {
+					console.warn("Supabase insert warning (persisting locally):", error);
+				}
+			} catch (err) {
+				console.warn("Failed to insert emergency contact to Supabase:", err);
+			}
 		}
 
-		return {
-			id: inserted.id,
-			user_id: inserted.user_id,
-			full_name: inserted.full_name || fullName,
-			name: inserted.full_name || fullName,
-			number: inserted.number || phoneNumber,
-			phone: inserted.number || phoneNumber,
-			email: inserted.email || email,
-			relationship: inserted.relationship || relationship,
-			is_primary: inserted.is_primary ?? false,
-			notify_sms: inserted.notify_sms ?? true,
-			notify_email: inserted.notify_email ?? true,
-			created_at: inserted.created_at
-		};
+		const items = readStore('emergency_contacts', emergencyContactsSeed);
+		items.unshift(newContactItem);
+		writeStore('emergency_contacts', items);
+		return newContactItem;
 	},
 
 	async update(id, updates) {
 		const userId = await getAuthUserId();
-		if (!userId || !id) return null;
-
 		const fullName = updates.full_name || updates.name;
 		const phoneNumber = updates.number || updates.phone;
 		const email = updates.email;
 		const relationship = updates.relationship;
 		const isPrimary = updates.is_primary;
 
-		const payload = {};
-		if (fullName !== undefined) payload.full_name = fullName;
-		if (phoneNumber !== undefined) payload.number = phoneNumber;
-		if (email !== undefined) payload.email = email;
-		if (relationship !== undefined) payload.relationship = relationship;
-		if (isPrimary !== undefined) payload.is_primary = isPrimary;
-
-		if (Object.keys(payload).length > 0) {
+		if (userId && id) {
 			try {
-				const { data, error } = await supabase
-					.from('emergency_contacts')
-					.update(payload)
-					.eq('id', id)
-					.eq('user_id', userId)
-					.select()
-					.single();
+				const payload = {};
+				if (fullName !== undefined) payload.full_name = fullName;
+				if (phoneNumber !== undefined) payload.number = phoneNumber;
+				if (email !== undefined) payload.email = email;
+				if (relationship !== undefined) payload.relationship = relationship;
+				if (isPrimary !== undefined) payload.is_primary = isPrimary;
 
-				if (!error && data) {
-					return data;
+				if (Object.keys(payload).length > 0) {
+					const { error } = await supabase
+						.from('emergency_contacts')
+						.update(payload)
+						.eq('id', id)
+						.eq('user_id', userId);
+
+					if (error) {
+						console.warn("Supabase update error:", error);
+					}
 				}
 			} catch (err) {
 				console.warn("Supabase update error:", err);
 			}
+		}
+
+		const items = readStore('emergency_contacts', emergencyContactsSeed);
+		const idx = items.findIndex((i) => i.id === id);
+		if (idx >= 0) {
+			items[idx] = { ...items[idx], ...updates };
+			if (fullName) { items[idx].full_name = fullName; items[idx].name = fullName; }
+			if (phoneNumber) { items[idx].number = phoneNumber; items[idx].phone = phoneNumber; }
+			writeStore('emergency_contacts', items);
+			return items[idx];
 		}
 		return null;
 	},
 
 	async delete(id) {
 		const userId = await getAuthUserId();
-		if (!userId || !id) return false;
 
-		try {
-			const { error } = await supabase
-				.from('emergency_contacts')
-				.delete()
-				.eq('id', id)
-				.eq('user_id', userId);
+		if (userId && id) {
+			try {
+				const { error } = await supabase
+					.from('emergency_contacts')
+					.delete()
+					.eq('id', id)
+					.eq('user_id', userId);
 
-			if (error) {
-				console.warn("Supabase delete error:", error);
-				return false;
+				if (error) {
+					console.warn("Supabase delete error:", error);
+				}
+			} catch (err) {
+				console.warn("Supabase delete exception:", err);
 			}
-			return true;
-		} catch (err) {
-			console.warn("Supabase delete exception:", err);
-			return false;
 		}
+
+		const items = readStore('emergency_contacts', emergencyContactsSeed);
+		const filtered = items.filter((i) => i.id !== id);
+		writeStore('emergency_contacts', filtered);
+		return true;
 	}
 };
 

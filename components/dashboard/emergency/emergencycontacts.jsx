@@ -33,10 +33,20 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
   });
 
   const handleAddContact = async () => {
-    if (!newContact.name || !newContact.phone || !newContact.relationship) return;
+    const name = newContact.name?.trim();
+    const phone = newContact.phone?.trim();
+    if (!name || !phone) return;
     
     try {
-      await EmergencyContact.create(newContact);
+      const contactToSave = {
+        ...newContact,
+        name,
+        phone,
+        full_name: name,
+        number: phone,
+        relationship: newContact.relationship || "other"
+      };
+      await EmergencyContact.create(contactToSave);
       setNewContact({
         name: "",
         phone: "",

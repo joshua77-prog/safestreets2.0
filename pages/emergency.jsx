@@ -41,19 +41,10 @@ export default function Emergency() {
   const loadEmergencyData = async () => {
     try {
       setLoading(true);
-      // Requirement 1 & 4: Clear existing state before loading and replace completely
-      setContacts([]);
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setContacts([]);
-        setActiveAlert(null);
-        return;
-      }
 
       const [contactList, activeAlerts] = await Promise.all([
         EmergencyContact.list(),
-        SOSAlert.filter({ status: 'active' }, '-created_date', 1)
+        SOSAlert.filter({ status: 'active' }, '-created_date', 1).catch(() => [])
       ]);
       
       setContacts(contactList || []);
@@ -64,7 +55,6 @@ export default function Emergency() {
       }
     } catch (error) {
       console.error("Error loading emergency data:", error);
-      setContacts([]);
     } finally {
       setLoading(false);
     }
@@ -73,19 +63,9 @@ export default function Emergency() {
   useEffect(() => {
     loadEmergencyData();
 
-    // Requirement 3: Detect auth state change using Supabase Auth
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      // Requirement 2 & 3: Reset contacts state & clear cached data
-      setContacts([]);
-      setActiveAlert(null);
       EmergencyContact.clearCache();
-
-      if (event === 'SIGNED_OUT' || !session?.user) {
-        setContacts([]);
-        setLoading(false);
-      } else if (session?.user) {
-        loadEmergencyData();
-      }
+      loadEmergencyData();
     });
 
     return () => {
