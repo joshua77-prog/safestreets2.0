@@ -56,6 +56,39 @@ const liveLocationIcon = L.divIcon({
   popupAnchor: [0, -14],
 });
 
+// Helper for Category Emoji/Badge on Trusted Place Pins
+function getCategoryEmoji(category) {
+  switch (category) {
+    case "Home": return "🏠";
+    case "College": return "🎓";
+    case "School": return "🏫";
+    case "Work": return "💼";
+    case "Friend's House": return "👥";
+    case "Relative's House": return "🏠";
+    default: return "📍";
+  }
+}
+
+// Custom Trusted Place Pin Icon Generator
+function createTrustedPlaceIcon(category, name) {
+  const emoji = getCategoryEmoji(category);
+  return L.divIcon({
+    className: "custom-trusted-place-pin",
+    html: `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">
+        <div style="background-color: #0f172a; color: #ffffff; font-size: 14px; font-weight: 800; border-radius: 9999px; padding: 4px 8px; border: 2px solid #10b981; display: flex; align-items: center; gap: 4px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+          <span>${emoji}</span>
+          <span style="font-family: system-ui, sans-serif; font-size: 11px; max-width: 90px; overflow: hidden; text-overflow: ellipsis;">${name || category}</span>
+        </div>
+        <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #10b981; margin-top: -1px;"></div>
+      </div>
+    `,
+    iconSize: [100, 36],
+    iconAnchor: [50, 36],
+    popupAnchor: [0, -36],
+  });
+}
+
 function MapController({ center, zoom, from, to, recenterOnUser, flyToTarget, onUserInteract }) {
   const map = useMap();
   const prevRouteKey = useRef("");
@@ -72,7 +105,7 @@ function MapController({ center, zoom, from, to, recenterOnUser, flyToTarget, on
     },
   });
 
-  // Explicit flyTo target (e.g. when user clicks "Real-time positioning" header button)
+  // Explicit flyTo target
   useEffect(() => {
     if (flyToTarget?.coords && flyToTarget.key !== prevFlyKey.current) {
       prevFlyKey.current = flyToTarget.key;
@@ -109,12 +142,6 @@ function MapController({ center, zoom, from, to, recenterOnUser, flyToTarget, on
   return null;
 }
 
-function getSafetyColor(score) {
-  if (score >= 8) return "#16a34a";
-  if (score >= 5) return "#eab308";
-  return "#dc2626";
-}
-
 export default function MapView({ 
   center = [12.9716, 77.5946], 
   zoom = 13, 
@@ -125,11 +152,14 @@ export default function MapView({
   children, 
   safetyData = [], 
   communityReports = [],
+  trustedPlaces = [],
+  onSelectTrustedPlace,
   recenterOnUser = false,
   onUserInteract
 }) {
   const markers = Array.isArray(safetyData) ? safetyData : [];
   const reports = Array.isArray(communityReports) ? communityReports : [];
+  const places = Array.isArray(trustedPlaces) ? trustedPlaces : [];
 
   return (
     <MapContainer center={center} zoom={zoom} style={{ height: "100%", width: "100%" }}>
@@ -164,6 +194,60 @@ export default function MapView({
           <Popup>Destination</Popup>
         </Marker>
       )}
+
+      {/* Trusted Places Markers */}
+      {places.map((place) => {
+        const lat = Number(place.latitude);
+        const lon = Number(place.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+        const icon = createTrustedPlaceIcon(place.category, place.place_name);
+
+        return (
+          <Marker 
+            key={place.id || `${lat}-${lon}`} 
+            position={[lat, lon]} 
+            icon={icon}
+            eventHandlers={{
+              click: () => onSelectTrustedPlace?.(place)
+            }}
+          >
+            <Popup>
+              <div style={{ padding: "4px", minWidth: "160px" }}>
+                <div style={{ fontWeight: "800", fontSize: "14px", color: "#0f172a" }}>
+                  {getCategoryEmoji(place.category)} {place.place_name}
+                </div>
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "#10b981", textTransform: "uppercase", marginTop: "2px" }}>
+                  {place.category}
+                </div>
+                <div style={{ fontSize: "11px", color: "#475569", marginTop: "4px", lineHeight: "1.3" }}>
+                  {place.formatted_address}
+                </div>
+                {onSelectTrustedPlace && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectTrustedPlace(place)}
+                    style={{
+                      marginTop: "8px",
+                      width: "100%",
+                      backgroundColor: "#0f172a",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Start Navigation
+                  </button>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
 
       {children}
     </MapContainer>

@@ -6,140 +6,175 @@ import {
   Navigation,
   AlertTriangle,
   Shield,
-  Star
+  Star,
+  Layers
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-const getMarkerColor = (safetyRating, reportType) => {
-  // Incident types get red regardless of rating
-  if (reportType === 'incident' || reportType === 'suspicious_activity') {
-    return 'bg-red-500';
-  }
-  // Poor lighting gets yellow
-  if (reportType === 'poor_lighting') {
-    return 'bg-yellow-500';
-  }
-  // Safe zones and positive reports get green
-  if (reportType === 'safe_zone' || reportType === 'police_presence' || reportType === 'well_lit' || reportType === 'busy_area') {
-    return 'bg-green-500';
-  }
-  // Fallback to rating-based coloring
-  if (safetyRating >= 4) return 'bg-green-500';
-  if (safetyRating >= 3) return 'bg-yellow-500';
-  return 'bg-red-500';
+// Fix default marker assets for Leaflet in bundlers
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+const getMarkerColorHex = (safetyRating, reportType) => {
+  if (reportType === 'incident' || reportType === 'suspicious_activity') return '#ef4444'; // Red
+  if (reportType === 'poor_lighting') return '#eab308'; // Yellow
+  if (reportType === 'safe_zone' || reportType === 'police_presence' || reportType === 'well_lit' || reportType === 'busy_area') return '#22c55e'; // Green
+  if (safetyRating >= 4) return '#22c55e';
+  if (safetyRating >= 3) return '#eab308';
+  return '#ef4444';
 };
 
-export default function SafetyMap({ reports }) {
+const createReportIcon = (colorHex) => L.divIcon({
+  className: "custom-report-marker",
+  html: `
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;">
+      <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background-color: ${colorHex}; opacity: 0.35; animation: liveDotPulse 1.8s infinite ease-in-out;"></div>
+      <div style="position: relative; width: 16px; height: 16px; border-radius: 50%; background-color: ${colorHex}; border: 2.5px solid #ffffff; box-shadow: 0 3px 8px rgba(0,0,0,0.4);"></div>
+    </div>
+  `,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
+const getReportCoords = (report, index) => {
+  const lat = Number(report.latitude);
+  const lon = Number(report.longitude);
+  if (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {
+    return [lat, lon];
+  }
+  // Default coordinates centered around Bengaluru with slight scatter for seed reports missing GPS
+  const baseLat = 12.9716;
+  const baseLon = 77.5946;
+  const latOffset = (((index * 37) % 100) - 50) * 0.003;
+  const lonOffset = (((index * 53) % 100) - 50) * 0.003;
+  return [baseLat + latOffset, baseLon + lonOffset];
+};
+
+export default function SafetyMap({ reports = [] }) {
+  const reportList = Array.isArray(reports) ? reports : [];
+
+  // Calculate default map center based on first report or default city center
+  const defaultCenter = reportList.length > 0 && reportList[0].latitude && reportList[0].longitude
+    ? [Number(reportList[0].latitude), Number(reportList[0].longitude)]
+    : [12.9716, 77.5946];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6"
     >
-      {/* Map Placeholder */}
-      <Card className="shadow-lg border-0">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-500">
-              <Navigation className="w-5 h-5 text-white" />
-            </div>
-            Safety Map
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="relative h-96 bg-gradient-to-br from-blue-50 to-green-50 rounded-b-lg overflow-hidden">
-            {/* Map Background */}
-            <div className="absolute inset-0 opacity-20">
-              <div className="w-full h-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200" />
-              {/* Grid lines to simulate map */}
-              <div className="absolute inset-0">
-                {Array(10).fill(0).map((_, i) => (
-                  <div key={`v-${i}`} className="absolute top-0 bottom-0 border-l border-slate-300" style={{left: `${i * 10}%`}} />
-                ))}
-                {Array(8).fill(0).map((_, i) => (
-                  <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-slate-300" style={{top: `${i * 12.5}%`}} />
-                ))}
+      {/* Interactive Safety Map Card */}
+      <Card className="shadow-lg border-0 overflow-hidden">
+        <CardHeader className="py-4">
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-emerald-500 shadow-md shadow-emerald-500/20">
+                <Navigation className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <span className="text-lg font-bold text-slate-900">Geospatial Safety Intelligence</span>
+                <p className="text-xs text-slate-500 font-medium">Real-time OpenStreetMap rendering & incident telemetry</p>
               </div>
             </div>
-            
-            {/* Map Markers */}
-            {reports.map((report, index) => (
-              <motion.div
-                key={report.id}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: index * 0.1 }}
-                className="absolute transform -translate-x-1/2 -translate-y-full cursor-pointer group"
-                style={{
-                  left: `${20 + (index % 5) * 15 + Math.random() * 10}%`,
-                  top: `${30 + Math.floor(index / 5) * 20 + Math.random() * 10}%`
-                }}
-              >
-                <div className={`w-4 h-4 rounded-full ${getMarkerColor(report.safety_rating, report.report_type)} shadow-lg border-2 border-white`}>
-                  <div className="absolute inset-0 rounded-full animate-ping bg-current opacity-25" />
-                </div>
-                
-                {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                  <div className="bg-white rounded-lg shadow-xl border p-3 whitespace-nowrap">
-                    <div className="text-sm font-semibold text-slate-900 mb-1">
-                      {report.location}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge className="text-xs">
-                        {report.report_type.replace(/_/g, ' ')}
-                      </Badge>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-500 fill-current" />
-                        <span>{report.safety_rating}/5</span>
+            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-xs px-3 py-1">
+              Live Map Connected
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          <div className="relative h-[480px] w-full overflow-hidden">
+            {/* Real Leaflet Map */}
+            <MapContainer 
+              center={defaultCenter} 
+              zoom={13} 
+              style={{ height: "100%", width: "100%", zIndex: 1 }}
+              scrollWheelZoom={true}
+            >
+              <TileLayer 
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+
+              {/* Render interactive markers for each report */}
+              {reportList.map((report, index) => {
+                const coords = getReportCoords(report, index);
+                const colorHex = getMarkerColorHex(report.safety_rating, report.report_type);
+                const icon = createReportIcon(colorHex);
+
+                return (
+                  <Marker key={report.id || `report-${index}`} position={coords} icon={icon}>
+                    <Popup className="custom-report-popup">
+                      <div className="p-1 min-w-[200px]">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {report.location || "Reported Location"}
+                          </span>
+                          <Badge className="text-[10px] uppercase font-bold px-2 py-0.5" style={{ backgroundColor: colorHex, color: "#ffffff" }}>
+                            {(report.report_type || "Incident").replace(/_/g, ' ')}
+                          </Badge>
+                        </div>
+                        
+                        {report.description && (
+                          <p className="text-xs text-slate-600 mb-2 leading-relaxed">
+                            {report.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                          <div className="flex items-center gap-1 font-semibold text-slate-700">
+                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            <span>{report.safety_rating ?? "3"}/5 Safety Score</span>
+                          </div>
+                          {report.created_date && (
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(report.created_date).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white"></div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </MapContainer>
             
-            {/* Map Legend */}
-            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg">
-              <h4 className="text-sm font-semibold text-slate-900 mb-3">Safety Legend</h4>
-              <div className="space-y-2 text-xs">
+            {/* Overlay Status Badge */}
+            <div className="absolute top-4 left-4 z-[1000] bg-slate-900/90 text-white backdrop-blur-md rounded-xl px-4 py-2.5 shadow-xl text-xs font-semibold flex items-center gap-2.5 border border-slate-700">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span>{reportList.length} Active Safety Reports Plotted</span>
+            </div>
+
+            {/* Safety Legend Overlay */}
+            <div className="absolute bottom-4 left-4 z-[1000] bg-white/95 backdrop-blur-md rounded-xl p-4 shadow-xl border border-slate-200/80 min-w-[180px]">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-2.5 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                Safety Legend
+              </h4>
+              <div className="space-y-2 text-xs font-medium">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></div>
                   <span className="text-slate-700">Safe Zone (4-5★)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-amber-500 shadow-sm"></div>
                   <span className="text-slate-700">Caution (2-3★)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                  <span className="text-slate-700">Unsafe (1★)</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Map Controls */}
-            <div className="absolute top-4 right-4 flex flex-col gap-2">
-              <button className="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors">
-                <span className="text-lg font-bold text-slate-700">+</span>
-              </button>
-              <button className="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors">
-                <span className="text-lg font-bold text-slate-700">-</span>
-              </button>
-            </div>
-            
-            {/* Center Message */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center p-8 bg-white/80 backdrop-blur-sm rounded-xl shadow-lg">
-                <MapPin className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-slate-700 mb-2">Interactive Safety Map</h3>
-                <p className="text-sm text-slate-600 max-w-sm">
-                  In the full version, this would be an interactive map showing real-time safety data
-                  with clustering, route overlays, and detailed location information.
-                </p>
-                <div className="mt-4 text-xs text-slate-500">
-                  {reports.length} safety reports plotted
+                  <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
+                  <span className="text-slate-700">Unsafe / Incident (1★)</span>
                 </div>
               </div>
             </div>
@@ -149,34 +184,34 @@ export default function SafetyMap({ reports }) {
       
       {/* Map Statistics */}
       <div className="grid grid-cols-3 gap-4">
-        <Card>
+        <Card className="border-emerald-100 bg-emerald-50/40">
           <CardContent className="p-4 text-center">
-            <Shield className="w-6 h-6 text-green-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating >= 4).length}
+            <Shield className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+            <div className="text-xl font-black text-slate-900">
+              {reportList.filter(r => r.safety_rating >= 4 || r.report_type === 'safe_zone').length}
             </div>
-            <div className="text-xs text-slate-500">Safe Zones</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Safe Zones</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-amber-100 bg-amber-50/40">
           <CardContent className="p-4 text-center">
-            <AlertTriangle className="w-6 h-6 text-yellow-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating === 3).length}
+            <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" />
+            <div className="text-xl font-black text-slate-900">
+              {reportList.filter(r => r.safety_rating === 3 || r.report_type === 'poor_lighting').length}
             </div>
-            <div className="text-xs text-slate-500">Neutral Areas</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Neutral Areas</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-red-100 bg-red-50/40">
           <CardContent className="p-4 text-center">
-            <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
-            <div className="text-lg font-bold text-slate-900">
-              {reports.filter(r => r.safety_rating <= 2).length}
+            <AlertTriangle className="w-6 h-6 text-red-600 mx-auto mb-2" />
+            <div className="text-xl font-black text-slate-900">
+              {reportList.filter(r => r.safety_rating <= 2 || r.report_type === 'incident' || r.report_type === 'suspicious_activity').length}
             </div>
-            <div className="text-xs text-slate-500">Risk Areas</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Risk Areas</div>
           </CardContent>
         </Card>
       </div>
     </motion.div>
   );
-}
+}

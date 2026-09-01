@@ -39,38 +39,40 @@ export async function callEmergencyContact(phoneNumber) {
   const apiToken = process.env.EXOTEL_API_TOKEN;
   const accountSid = process.env.EXOTEL_ACCOUNT_SID;
   const appId = process.env.EXOTEL_APP_ID;
-  const exoPhone = process.env.EXOTEL_EXOPHONE;
+  const exoPhone = process.env.EXOTEL_EXOPHONE || process.env.EXOTEL_CALLER_ID;
 
-  if (!apiKey || !apiToken || !accountSid || !appId || !exoPhone) {
+  if (!apiKey || !apiToken || !accountSid || !exoPhone) {
     return {
       success: false,
-      error: "Missing Exotel environment variables."
+      error: "Missing Exotel environment variables (API Key, Token, Account SID, or Caller ID/Exophone)."
     };
   }
 
   const destinationNumber = formatPhoneForExotel(phoneNumber);
   const callerId = formatPhoneForExotel(exoPhone);
 
-  // HTTPS ExoML URL
-  const exomlUrl = `https://my.exotel.com/${accountSid}/exoml/start_voice/${appId}`;
-
-  // Singapore Endpoint
   const endpoint = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
 
   console.log("\n================ EXOTEL =================");
   console.log("Destination :", destinationNumber);
   console.log("Caller ID   :", callerId);
   console.log("Account SID :", accountSid);
-  console.log("App ID      :", appId);
-  console.log("Flow URL    :", exomlUrl);
+  if (appId) console.log("App ID      :", appId);
   console.log("Endpoint    :", endpoint);
   console.log("=========================================\n");
 
   const params = new URLSearchParams();
 
-  params.append("From", destinationNumber);
-  params.append("CallerId", callerId);
-  params.append("Url", exomlUrl);
+  if (appId) {
+    params.append("From", destinationNumber);
+    params.append("CallerId", callerId);
+    const exomlUrl = `https://my.exotel.com/${accountSid}/exoml/start_voice/${appId}`;
+    params.append("Url", exomlUrl);
+  } else {
+    params.append("From", callerId);
+    params.append("To", destinationNumber);
+    params.append("CallerId", callerId);
+  }
 
   // Try Transactional call
   params.append("CallType", "trans");
