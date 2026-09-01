@@ -258,7 +258,7 @@ export default function SafetyScoreCard({ scoreResult }) {
                 {/* Final Formula Summary */}
                 <div className="text-xs text-slate-300 leading-relaxed font-medium bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
                   <p>
-                    <strong className="text-white">Total Risk Formula:</strong> (Historical Risk {historicalRisk} × 0.4) + (Community Risk {communityRisk} × 0.6) = <span className="text-rose-400 font-bold">{totalRisk}</span>
+                    <strong className="text-white">Total Risk Formula:</strong> (Historical Risk {historicalRisk} × 0.4) + (Community Risk {communityRisk} × 0.6){totalDangerPenalty > 0 ? ` + Danger Penalty (${totalDangerPenalty})` : ""} = <span className="text-rose-400 font-bold">{totalRisk}</span>
                   </p>
                   <p>
                     <strong className="text-white">Final Safety Score Formula:</strong> Base Score (100) - Total Risk ({totalRisk}) = <span className="text-emerald-400 font-bold">{Math.round(finalScore)} / 100</span>

@@ -26,6 +26,7 @@ function normalizeCommunityReport(record) {
 
   const lat = Number(record.latitude);
   const lon = Number(record.longitude);
+  const createdAt = record.created_at || record.created_date || new Date().toISOString();
 
   return {
     ...record,
@@ -39,7 +40,8 @@ function normalizeCommunityReport(record) {
     category: record.category || record.report_type || record.issue_type || "Incident",
     safety_rating: Number(record.safety_rating ?? 3),
     time_cycle: record.time_cycle || "Day",
-    created_date: record.created_at || record.created_date || new Date().toISOString()
+    created_at: createdAt,
+    created_date: createdAt
   };
 }
 
@@ -90,40 +92,81 @@ export async function getSafetyData() {
   console.log("\n[SUPABASE]");
   console.log("Querying safety_analysis...");
 
-  try {
-    const pages = [0, 1000, 2000, 3000, 4000, 5000];
-    const promises = pages.map((offset) =>
-      supabase
-        .from(PRIMARY_SAFETY_TABLE)
-        .select("*")
-        .range(offset, offset + 999)
-        .order("crime_count", { ascending: false })
-    );
+  let supabaseRecords = [];
 
-    const results = await Promise.all(promises);
-    let allRecords = [];
+  if (!missingTables.has(PRIMARY_SAFETY_TABLE)) {
+    try {
+      const pageSize = 1000;
+      let offset = 0;
+      let keepFetching = true;
+      const MAX_PAGES = 30; // maximum 30,000 records safety ceiling
+      let pageCount = 0;
 
-    results.forEach((res) => {
-      if (res.data && Array.isArray(res.data)) {
-        allRecords.push(...res.data);
+      while (keepFetching && pageCount < MAX_PAGES) {
+        pageCount++;
+        const { data, error } = await supabase
+          .from(PRIMARY_SAFETY_TABLE)
+          .select("*")
+          .range(offset, offset + pageSize - 1)
+          .order("crime_count", { ascending: false });
+
+        if (error) {
+          const isNotFound = error.status === 404 || error.code === 'PGRST301' || error.code === '42P01' || (error.message && error.message.includes("Could not find the table"));
+          if (isNotFound) {
+            missingTables.add(PRIMARY_SAFETY_TABLE);
+          }
+          break;
+        }
+
+        if (data && Array.isArray(data) && data.length > 0) {
+          supabaseRecords.push(...data);
+          if (data.length < pageSize) {
+            keepFetching = false;
+          } else {
+            offset += pageSize;
+          }
+        } else {
+          keepFetching = false;
+        }
       }
-    });
 
-    console.log(`Supabase returned: ${allRecords.length} records`);
-
-    if (allRecords.length > 0) {
-      const normalized = allRecords.map(normalizeSafetyRecord).filter(Boolean);
-      console.log(`\n[SAFETY DATA]`);
-      console.log(`Normalized safety reports: ${normalized.length}`);
-      return normalized;
+      console.log(`Supabase returned: ${supabaseRecords.length} records across ${pageCount} page(s)`);
+    } catch (err) {
+      console.error("[SUPABASE] Error querying safety_analysis:", err.message);
     }
-  } catch (err) {
-    console.error("[SUPABASE] Error querying safety_analysis:", err.message);
   }
 
-  // Fallback to local 20,000 safety dataset ONLY if Supabase returns 0 records
-  console.log("[SUPABASE] Falling back to local dataset parser...");
-  return getDatasetSafetyData();
+  // Load local CSV dataset (20,000 records)
+  const localDataset = getDatasetSafetyData();
+
+  if (supabaseRecords.length === 0) {
+    console.log("[SUPABASE] Using local CSV dataset parser...");
+    return localDataset;
+  }
+
+  // Deduplicate combined dataset deterministically
+  const normalizedSupabase = supabaseRecords.map(normalizeSafetyRecord).filter(Boolean);
+  const seenKeys = new Set();
+  const merged = [];
+
+  normalizedSupabase.forEach((rec) => {
+    const key = rec.id ? String(rec.id) : `${rec.latitude.toFixed(4)}_${rec.longitude.toFixed(4)}_${rec.crime_type}_${rec.crime_count}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      merged.push(rec);
+    }
+  });
+
+  localDataset.forEach((rec) => {
+    const key = rec.id ? String(rec.id) : `${rec.latitude.toFixed(4)}_${rec.longitude.toFixed(4)}_${rec.crime_type}_${rec.crime_count}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      merged.push(rec);
+    }
+  });
+
+  console.log(`\n[SAFETY DATA] Merged dataset contains: ${merged.length} total records`);
+  return merged;
 }
 
 export async function getSafetyDataByCity(city) {

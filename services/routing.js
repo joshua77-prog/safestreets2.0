@@ -172,6 +172,10 @@ export async function evaluateCandidateRoute(
   // COMPLETE ROUTE EVALUATION
   // ==========================================================
 
+  // ==========================================================
+  // COMPLETE ROUTE EVALUATION
+  // ==========================================================
+
   const evaluation = {
     routeId: `route-${index + 1}`,
     rawRoute: route,
@@ -221,23 +225,31 @@ export async function evaluateCandidateRoute(
 
 
   // ==========================================================
-  // DEBUG OUTPUT (PART 13)
+  // STRUCTURED DEBUG LOGGING (PHASE 4)
   // ==========================================================
 
+  const totalHistAvailable = (safetyContext.safetyData || []).length;
+  const histMatched = routeAnalysis.historicalReports.length;
+  const totalCommAvailable = (safetyContext.communityReports || []).length;
+  const commMatched = routeAnalysis.positiveReports.length + routeAnalysis.negativeReports.length;
+
+  const histRecordIds = routeAnalysis.historicalReports.map((r) => r.id);
+  const commReportIds = [...routeAnalysis.positiveReports, ...routeAnalysis.negativeReports].map((r) => r.id);
+
   console.log("----------------------------------");
-  console.log(`Route ID: ${evaluation.routeId}`);
-  console.log(`Distance: ${evaluation.distance}`);
-  console.log(`Duration: ${evaluation.duration}`);
-  console.log(`Historical Risk: ${evaluation.historicalRisk}`);
-  console.log(`Weighted Historical Risk: ${evaluation.weightedHistoricalRisk}`);
-  console.log(`Community Risk: ${evaluation.communityRisk}`);
-  console.log(`Weighted Community Risk: ${evaluation.weightedCommunityRisk}`);
-  console.log(`Danger Zone Penalty: ${evaluation.dangerPenalty}`);
-  console.log(`Displayed Safety Score: ${evaluation.displayedSafetyScore}`);
-  console.log(`Internal Route Risk: ${evaluation.internalRouteRisk}`);
-  console.log(`Final Route Ranking Score: ${evaluation.finalRouteRankingScore}`);
-  console.log(`Danger Zones Entered: ${evaluation.penetratedDangerZones.length}`);
-  console.log(`ML Prediction Used: ${scoreResult.mlPredictionUsed}`);
+  console.log(`[EVALUATION] Route ID: ${evaluation.routeId}`);
+  console.log(`- Distance: ${evaluation.distance} | Duration: ${evaluation.duration}`);
+  console.log(`- Historical Records: ${totalHistAvailable} available in context -> ${histMatched} matched to corridor -> ${histMatched} sent to ML`);
+  console.log(`- Community Reports: ${totalCommAvailable} available in context -> ${commMatched} matched & used`);
+  console.log(`- Danger Zones Penetrated: ${evaluation.penetratedDangerZones.length} zones (Penalty: +${evaluation.dangerPenalty})`);
+  console.log(`- Historical Risk: ${evaluation.historicalRisk} (Weighted: ${evaluation.weightedHistoricalRisk})`);
+  console.log(`- Community Risk: ${evaluation.communityRisk} (Weighted: ${evaluation.weightedCommunityRisk})`);
+  console.log(`- Displayed Total Risk: ${scoreResult.totalRisk}`);
+  console.log(`- Final Displayed Safety Score: ${evaluation.displayedSafetyScore} / 100`);
+  console.log(`- Internal Ranking Risk: ${evaluation.internalRouteRisk}`);
+  console.log(`- ML Prediction Status: ${scoreResult.mlPredictionUsed ? "ML_BATCH" : "RULE_BASED_FALLBACK"}`);
+  console.log(`- Historical Record IDs:`, histRecordIds);
+  console.log(`- Community Report IDs:`, commReportIds);
   console.log("----------------------------------");
 
   return evaluation;

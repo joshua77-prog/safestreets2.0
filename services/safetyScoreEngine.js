@@ -141,6 +141,42 @@ export function getCurrentTimeCycle(date = new Date()) {
 
 
 // ============================================================
+// NORMALIZE REPORT CATEGORY
+// ============================================================
+
+export function normalizeReportCategory(categoryInput, reportTypeInput) {
+  const input = String(categoryInput || reportTypeInput || "").trim();
+  if (!input) return "Other";
+
+  const lower = input.toLowerCase();
+
+  // Positive categories
+  if (lower.includes("police patrol") || lower.includes("patrol")) return "Police Patrol";
+  if (lower.includes("police") || lower.includes("cop") || lower.includes("station")) return "Police Presence";
+  if (lower.includes("guarded") || lower.includes("security guard")) return "Guarded Premises";
+  if (lower.includes("bright") || lower.includes("well lit") || lower.includes("good lighting")) return "Brightly Lit Street";
+  if (lower.includes("busy") || lower.includes("foot traffic") || lower.includes("crowded")) return "Busy Area";
+  if (lower.includes("felt safe") || lower.includes("safe_zone") || lower.includes("safe zone")) return "Felt Safe";
+
+  // Negative categories
+  if (lower.includes("assault") || lower.includes("attack") || lower.includes("battery")) return "Assault";
+  if (lower.includes("violence") || lower.includes("fight")) return "Violence";
+  if (lower.includes("harass") || lower.includes("stalk") || lower.includes("eve teasing") || lower.includes("catcall")) return "Harassment";
+  if (lower.includes("pickpocket")) return "Pickpocketing";
+  if (lower.includes("theft") || lower.includes("steal") || lower.includes("snatch")) return "Theft";
+  if (lower.includes("robbery") || lower.includes("mugging") || lower.includes("burglary")) return "Robbery";
+  if (lower.includes("suspicious") || lower.includes("loitering")) return "Suspicious Activity";
+  if (lower.includes("isolated") || lower.includes("dark alley") || lower.includes("lonely")) return "Isolated Area";
+  if (lower.includes("drunk") || lower.includes("brawl") || lower.includes("substance")) return "Drunk People";
+  if (lower.includes("poor lighting") || lower.includes("dark") || lower.includes("no light")) return "Poor Lighting";
+  if (lower.includes("reckless") || lower.includes("overspeeding")) return "Reckless Driving";
+  if (lower.includes("hazard") || lower.includes("accident") || lower.includes("obstacle")) return "Road Hazard";
+  if (lower.includes("animal") || lower.includes("dog")) return "Stray Animal Threat";
+
+  return "Other";
+}
+
+// ============================================================
 // NORMALIZE TIME CYCLE
 // ============================================================
 
@@ -152,15 +188,9 @@ export function normalizeTimeCycle(value) {
   if (str.includes("morning")) return "Morning";
   if (str.includes("afternoon")) return "Afternoon";
   if (str.includes("evening")) return "Evening";
-
-  if (
-    str.includes("late") ||
-    str.includes("critical")
-  ) {
-    return "Critical Hours";
-  }
-
+  if (str.includes("late") || str.includes("critical")) return "Critical Hours";
   if (str.includes("night")) return "Night";
+  if (str === "day" || str.includes("daytime")) return "Afternoon";
 
   return "Morning";
 }
@@ -213,6 +243,11 @@ export function getTimeMultiplier(
 
   if (curr === rep) return 1.2;
 
+  // Daytime broad compatibility (Day/Afternoon during Morning/Afternoon/Evening)
+  const isCurrDaytime = curr === "Morning" || curr === "Afternoon" || curr === "Evening";
+  const isRepDaytime = String(reportTimeCycle).toLowerCase() === "day" || rep === "Afternoon" || rep === "Morning";
+  if (isCurrDaytime && isRepDaytime) return 1.0;
+
   const idxCurr = TIME_CYCLES.indexOf(curr);
   const idxRep = TIME_CYCLES.indexOf(rep);
 
@@ -236,10 +271,11 @@ export function getTimeMultiplier(
 // ============================================================
 
 export function getReportAgeMultiplier(createdAt) {
-  if (!createdAt) return 1.0;
+  const dateVal = typeof createdAt === "object" ? (createdAt?.created_at || createdAt?.created_date) : createdAt;
+  if (!dateVal) return 1.0;
 
   try {
-    const reportDate = new Date(createdAt);
+    const reportDate = new Date(dateVal);
 
     if (isNaN(reportDate.getTime())) {
       return 1.0;
@@ -455,7 +491,7 @@ async function getMLHistoricalRisk(features) {
 // EXTRACT HISTORICAL FEATURES
 // ============================================================
 
-function extractHistoricalFeatures(report) {
+export function extractHistoricalFeatures(report) {
   const raw = report?.raw || report || {};
 
   let rawPoliceDist =
@@ -546,7 +582,7 @@ function extractHistoricalFeatures(report) {
 // FALLBACK HISTORICAL RISK
 // ============================================================
 
-function calculateRuleBasedHistoricalRisk(historicalReports) {
+export function calculateRuleBasedHistoricalRisk(historicalReports) {
   if (
     !Array.isArray(historicalReports) ||
     historicalReports.length === 0
@@ -692,6 +728,54 @@ export function getHistoricalDensityMultiplier(count) {
   return 2.5;
 }
 
+export async function getMLHistoricalRiskBatch(records) {
+  if (!Array.isArray(records) || records.length === 0) return [];
+
+  const batchUrl = ML_API_URL.replace(/\/predict\/?$/, "/predict_batch");
+
+  try {
+    const payload = {
+      records: records.map((rep) => extractHistoricalFeatures(rep))
+    };
+
+    const response = await fetch(batchUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`ML Batch API returned HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result || result.success !== true || !Array.isArray(result.predictions)) {
+      throw new Error(result?.error || "Invalid ML batch response format");
+    }
+
+    return result.predictions;
+  } catch (err) {
+    if (!mlWarningLogged) {
+      console.warn("ML batch API unavailable (falling back to single ML or rule-based fallback):", err.message);
+      mlWarningLogged = true;
+    }
+    return null;
+  }
+}
+
+// Helper to aggregate historical predictions with frequency/density awareness
+export function calculateAggregatedHistoricalRisk(predictions) {
+  if (!Array.isArray(predictions) || predictions.length === 0) return 0;
+  const valid = predictions.map(Number).filter((p) => !isNaN(p) && p >= 0);
+  if (valid.length === 0) return 0;
+
+  const meanRisk = valid.reduce((a, b) => a + b, 0) / valid.length;
+  // Bounded frequency scaling: 1.0 + 0.25 * (N / (N + 15)) -> Range [1.00, 1.25]
+  const countFactor = 1.0 + 0.25 * (valid.length / (valid.length + 15));
+  const aggregated = meanRisk * countFactor;
+  return Math.min(100, Math.round(aggregated * 10) / 10);
+}
+
 
 // ============================================================
 // MAIN SAFETY SCORE ENGINE
@@ -712,42 +796,40 @@ export async function calculateSafetyScoreEngine(analysisResult) {
 
 
   // ==========================================================
-  // 1. HISTORICAL RISK (PARALLEL ML PREDICTIONS)
+  // 1. HISTORICAL RISK (BATCH ML PREDICTIONS)
   // ==========================================================
 
   let historicalRisk = 0;
   let mlPredictionUsed = false;
+  let densityMultiplier = 1.0;
 
   const numHistRecords = Array.isArray(historicalReports)
     ? historicalReports.length
     : 0;
 
   if (numHistRecords > 0) {
-    const sampleReports = numHistRecords > 30
-      ? [...historicalReports].sort((a, b) => (b.crime_count ?? 0) - (a.crime_count ?? 0) || (a.distance_from_route ?? 0) - (b.distance_from_route ?? 0)).slice(0, 30)
-      : historicalReports;
+    densityMultiplier = Math.round((1.0 + 0.25 * (numHistRecords / (numHistRecords + 15))) * 10) / 10;
+    let predictions = await getMLHistoricalRiskBatch(historicalReports);
 
-    const predictionPromises = sampleReports.map(async (report) => {
-      const features = extractHistoricalFeatures(report);
-      return await getMLHistoricalRisk(features);
-    });
+    if (!predictions && numHistRecords <= 30) {
+      const singlePromises = historicalReports.map((report) => getMLHistoricalRisk(extractHistoricalFeatures(report)));
+      const singleResults = await Promise.all(singlePromises);
+      predictions = singleResults.filter((p) => p !== null && !isNaN(p));
+    }
 
-    const results = await Promise.all(predictionPromises);
-    const predictions = results.filter((p) => p !== null && !isNaN(p));
-
-    if (predictions.length > 0) {
-      historicalRisk =
-        predictions.reduce((sum, value) => sum + value, 0) /
-        predictions.length;
+    if (predictions && predictions.length > 0) {
+      historicalRisk = calculateAggregatedHistoricalRisk(predictions);
       mlPredictionUsed = true;
     } else {
-      historicalRisk = calculateRuleBasedHistoricalRisk(historicalReports);
+      const baseRuleRisk = calculateRuleBasedHistoricalRisk(historicalReports);
+      const countFactor = 1.0 + 0.25 * (numHistRecords / (numHistRecords + 15));
+      historicalRisk = Math.min(100, Math.round(baseRuleRisk * countFactor * 10) / 10);
     }
   }
 
 
   // ==========================================================
-  // 2. COMMUNITY REPORT RISK
+  // 2. COMMUNITY REPORT RISK (BOUNDED SATURATION NORMALIZATION)
   // ==========================================================
 
   let communityRiskTotal = 0;
@@ -757,7 +839,9 @@ export async function calculateSafetyScoreEngine(analysisResult) {
 
   // POSITIVE REPORTS
   (positiveReports || []).forEach((rep) => {
+    const normalizedCat = normalizeReportCategory(rep.category, rep.report_type);
     const baseWeight =
+      POSITIVE_REPORT_RISK_WEIGHTS[normalizedCat] ??
       POSITIVE_REPORT_RISK_WEIGHTS[rep.category] ?? -10;
 
     const ratingMult =
@@ -772,7 +856,7 @@ export async function calculateSafetyScoreEngine(analysisResult) {
       currentTimeCycle
     );
 
-    const ageMult = getReportAgeMultiplier(rep.created_at);
+    const ageMult = getReportAgeMultiplier(rep);
 
     const reportRisk =
       baseWeight * ratingMult * distMult * timeMult * ageMult;
@@ -780,8 +864,7 @@ export async function calculateSafetyScoreEngine(analysisResult) {
     communityRiskTotal += reportRisk;
 
     communityReportContributions.push({
-      category:
-        rep.category || rep.report_type || "Positive Marker",
+      category: normalizedCat,
       type: "positive",
       baseWeight,
       ratingMult,
@@ -792,15 +875,16 @@ export async function calculateSafetyScoreEngine(analysisResult) {
     });
 
     positiveFactorDetails.push({
-      category:
-        rep.category || rep.report_type || "Positive Marker",
+      category: normalizedCat,
       impact: Math.abs(reportRisk)
     });
   });
 
   // NEGATIVE REPORTS
   (negativeReports || []).forEach((rep) => {
+    const normalizedCat = normalizeReportCategory(rep.category, rep.report_type);
     const baseWeight =
+      NEGATIVE_REPORT_RISK_WEIGHTS[normalizedCat] ??
       NEGATIVE_REPORT_RISK_WEIGHTS[rep.category] ?? 10;
 
     const ratingMult =
@@ -815,7 +899,7 @@ export async function calculateSafetyScoreEngine(analysisResult) {
       currentTimeCycle
     );
 
-    const ageMult = getReportAgeMultiplier(rep.created_at);
+    const ageMult = getReportAgeMultiplier(rep);
 
     const reportRisk =
       baseWeight * ratingMult * distMult * timeMult * ageMult;
@@ -823,8 +907,7 @@ export async function calculateSafetyScoreEngine(analysisResult) {
     communityRiskTotal += reportRisk;
 
     communityReportContributions.push({
-      category:
-        rep.category || rep.report_type || "Security Incident",
+      category: normalizedCat,
       type: "negative",
       baseWeight,
       ratingMult,
@@ -835,21 +918,25 @@ export async function calculateSafetyScoreEngine(analysisResult) {
     });
 
     negativeFactorDetails.push({
-      category:
-        rep.category || rep.report_type || "Security Incident",
+      category: normalizedCat,
       impact: Math.abs(reportRisk)
     });
   });
 
-  const communityRisk = Math.max(0, communityRiskTotal);
+  // Bounded soft saturation: C = 100 * (S_net / (S_net + 40)) if S_net > 0, else 0
+  const rawNetCommunityRisk = Math.max(0, communityRiskTotal);
+  const communityRisk = rawNetCommunityRisk > 0
+    ? Math.min(100, Math.round((100 * (rawNetCommunityRisk / (rawNetCommunityRisk + 40))) * 10) / 10)
+    : 0;
 
 
   // ==========================================================
   // 3. DANGER ZONE PENALTY
   // ==========================================================
 
-  const totalDangerPenalty = Number(
-    analysisResult.totalDangerPenalty ?? 0
+  const totalDangerPenalty = Math.min(
+    40,
+    Number(analysisResult.totalDangerPenalty ?? 0)
   );
 
   const penetratedDangerZones =
@@ -857,7 +944,7 @@ export async function calculateSafetyScoreEngine(analysisResult) {
 
 
   // ==========================================================
-  // 4. WEIGHTED RISK
+  // 4. WEIGHTED RISK & UNIFIED SAFETY SCORE
   // ==========================================================
 
   const weightedHistoricalRisk =
@@ -866,33 +953,22 @@ export async function calculateSafetyScoreEngine(analysisResult) {
   const weightedCommunityRisk =
     Math.round(communityRisk * COMMUNITY_WEIGHT * 10) / 10;
 
-  const displayedTotalRisk =
-    weightedHistoricalRisk + weightedCommunityRisk;
+  const totalRisk = Math.min(
+    100,
+    Math.round((weightedHistoricalRisk + weightedCommunityRisk + totalDangerPenalty) * 10) / 10
+  );
 
+  const displayedTotalRisk = totalRisk;
 
-  // ==========================================================
-  // 5. DISPLAYED SAFETY SCORE
-  // ==========================================================
-
-  const unclampedDisplayedScore = 100 - displayedTotalRisk;
-
+  // Displayed Safety Score & Internal Route Risk represent the SAME safety concept
   const displayedSafetyScore = Math.max(
     0,
-    Math.min(100, Math.round(unclampedDisplayedScore * 10) / 10)
+    Math.min(100, Math.round((100 - totalRisk) * 10) / 10)
   );
 
+  const internalRouteRisk = totalRisk;
 
-  // ==========================================================
-  // 6. INTERNAL ROUTE RISK
-  // ==========================================================
-
-  const internalRouteRisk =
-    Math.round((displayedTotalRisk + totalDangerPenalty) * 10) / 10;
-
-  const finalRouteRankingScore = Math.max(
-    0,
-    Math.round((100 - internalRouteRisk) * 10) / 10
-  );
+  const finalRouteRankingScore = displayedSafetyScore;
 
 
   // ==========================================================

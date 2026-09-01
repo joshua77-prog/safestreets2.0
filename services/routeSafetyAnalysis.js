@@ -186,15 +186,15 @@ export function calculateDangerPenalties(path = [], dangerZones = []) {
     if (minDistance <= zone.radius || distOutside <= 500) {
       let basePenalty = 0;
       if (minDistance <= zone.radius) {
-        basePenalty = 100;
+        basePenalty = 15;
       } else if (distOutside <= 100) {
-        basePenalty = 75;
-      } else if (distOutside <= 250) {
-        basePenalty = 50;
-      } else if (distOutside <= 500) {
-        basePenalty = 25;
-      } else {
         basePenalty = 10;
+      } else if (distOutside <= 250) {
+        basePenalty = 6;
+      } else if (distOutside <= 500) {
+        basePenalty = 3;
+      } else {
+        basePenalty = 1;
       }
 
       const severityMult = Math.max(0.5, zone.severity / 50);
@@ -205,7 +205,7 @@ export function calculateDangerPenalties(path = [], dangerZones = []) {
         ...zone,
         distanceToRoute: Math.round(minDistance),
         distOutside: Math.round(distOutside),
-        penalty: Math.round(penalty)
+        penalty: Math.round(penalty * 10) / 10
       });
     }
   });
@@ -213,9 +213,68 @@ export function calculateDangerPenalties(path = [], dangerZones = []) {
   const penetratedDangerZones = Array.from(penetratedMap.values()).sort((a, b) => b.penalty - a.penalty);
 
   return {
-    totalDangerPenalty: Math.round(totalDangerPenalty * 10) / 10,
+    totalDangerPenalty: Math.min(40, Math.round(totalDangerPenalty * 10) / 10),
     penetratedDangerZones
   };
+}
+
+export function pointToSegmentDistanceMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
+  if (aLat === bLat && aLon === bLon) {
+    return haversineDistanceMeters(pLat, pLon, aLat, aLon);
+  }
+
+  const cosLat = Math.cos(toRadians(pLat));
+  const px = pLon * 111320 * cosLat;
+  const py = pLat * 111320;
+  const ax = aLon * 111320 * cosLat;
+  const ay = aLat * 111320;
+  const bx = bLon * 111320 * cosLat;
+  const by = bLat * 111320;
+
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) return haversineDistanceMeters(pLat, pLon, aLat, aLon);
+
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  const projLat = aLat + t * (bLat - aLat);
+  const projLon = aLon + t * (bLon - aLon);
+
+  return haversineDistanceMeters(pLat, pLon, projLat, projLon);
+}
+
+export function pointToPathDistanceMeters(pLat, pLon, path) {
+  if (!Array.isArray(path) || path.length === 0) return Infinity;
+  if (path.length === 1) {
+    const node = path[0];
+    const nLat = Array.isArray(node) ? node[0] : node?.lat ?? node?.latitude;
+    const nLon = Array.isArray(node) ? node[1] : node?.lon ?? node?.longitude;
+    return haversineDistanceMeters(pLat, pLon, nLat, nLon);
+  }
+
+  let minDistance = Infinity;
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const nodeA = path[i];
+    const nodeB = path[i + 1];
+
+    const aLat = Array.isArray(nodeA) ? nodeA[0] : nodeA?.lat ?? nodeA?.latitude;
+    const aLon = Array.isArray(nodeA) ? nodeA[1] : nodeA?.lon ?? nodeA?.longitude;
+    const bLat = Array.isArray(nodeB) ? nodeB[0] : nodeB?.lat ?? nodeB?.latitude;
+    const bLon = Array.isArray(nodeB) ? nodeB[1] : nodeB?.lon ?? nodeB?.longitude;
+
+    if (aLat == null || aLon == null || bLat == null || bLon == null || isNaN(aLat) || isNaN(aLon) || isNaN(bLat) || isNaN(bLon)) continue;
+
+    const dist = pointToSegmentDistanceMeters(pLat, pLon, aLat, aLon, bLat, bLon);
+    if (dist < minDistance) {
+      minDistance = dist;
+    }
+  }
+
+  return minDistance;
 }
 
 /**
@@ -246,107 +305,100 @@ export function analyzeRouteSafetyData(route, communityReports = [], safetyData 
   const matchedCommunityReportsMap = new Map();
   const matchedSafetyAnalysisMap = new Map();
 
-  // Iterate through every coordinate along the route
-  path.forEach((coord) => {
-    const lat = Array.isArray(coord) ? coord[0] : coord?.lat ?? coord?.latitude;
-    const lon = Array.isArray(coord) ? coord[1] : coord?.lon ?? coord?.longitude;
+  // Search community_reports against route geometry line segments
+  (communityReports || []).forEach((report, index) => {
+    const repLat = Number(report.latitude);
+    const repLon = Number(report.longitude);
+    if (isNaN(repLat) || isNaN(repLon)) return;
 
-    if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
+    const distMeters = Math.round(pointToPathDistanceMeters(repLat, repLon, path));
+    if (distMeters <= SEARCH_RADIUS_METERS) {
+      const rawCategory = report.category || report.issue_type || report.report_type || "Incident";
+      const reportKey = report.id ? String(report.id) : `${repLat.toFixed(5)}_${repLon.toFixed(5)}_${rawCategory}_${index}`;
+      const existing = matchedCommunityReportsMap.get(reportKey);
 
-    // Search community_reports
-    (communityReports || []).forEach((report) => {
-      const repLat = Number(report.latitude);
-      const repLon = Number(report.longitude);
-      if (isNaN(repLat) || isNaN(repLon)) return;
+      if (!existing || distMeters < existing.distance_from_route) {
+        const distance_weight = distMeters <= 50 ? 1.00
+          : distMeters <= 100 ? 0.90
+          : distMeters <= 250 ? 0.75
+          : distMeters <= 500 ? 0.50
+          : distMeters <= 750 ? 0.30
+          : 0.10;
 
-      const distMeters = Math.round(haversineDistanceMeters(lat, lon, repLat, repLon));
-      if (distMeters <= SEARCH_RADIUS_METERS) {
-        const reportKey = report.id ?? `${repLat}_${repLon}_${report.category || report.report_type}`;
-        const existing = matchedCommunityReportsMap.get(reportKey);
-        
-        if (!existing || distMeters < existing.distance_from_route) {
-          const distance_weight = distMeters <= 50 ? 1.00
-            : distMeters <= 100 ? 0.90
-            : distMeters <= 250 ? 0.75
-            : distMeters <= 500 ? 0.50
-            : distMeters <= 750 ? 0.30
-            : 0.10;
-
-          matchedCommunityReportsMap.set(reportKey, {
-            id: report.id || reportKey,
-            report_type: report.report_type || "Observation",
-            category: report.category || report.issue_type || "General Observation",
-            latitude: repLat,
-            longitude: repLon,
-            safety_rating: Number(report.safety_rating ?? 3),
-            intelligence_briefing: report.intelligence_briefing || report.description || "No briefing details provided.",
-            time_cycle: report.time_cycle || "Anytime",
-            created_at: report.created_at || report.created_date || new Date().toISOString(),
-            distance_from_route: distMeters,
-            distance_weight,
-            raw: report
-          });
-        }
+        matchedCommunityReportsMap.set(reportKey, {
+          id: report.id || reportKey,
+          report_type: report.report_type || "Observation",
+          category: rawCategory,
+          latitude: repLat,
+          longitude: repLon,
+          safety_rating: Number(report.safety_rating ?? 3),
+          intelligence_briefing: report.intelligence_briefing || report.description || "No briefing details provided.",
+          time_cycle: report.time_cycle || "Day",
+          created_at: report.created_at || report.created_date || new Date().toISOString(),
+          created_date: report.created_at || report.created_date || new Date().toISOString(),
+          distance_from_route: distMeters,
+          distance_weight,
+          raw: report
+        });
       }
-    });
+    }
+  });
 
-    // Search safety_analysis concurrently
-    (safetyData || []).forEach((item) => {
-      const itemLat = Number(item.latitude);
-      const itemLon = Number(item.longitude);
-      if (isNaN(itemLat) || isNaN(itemLon)) return;
+  // Search safety_analysis historical records against route geometry line segments
+  (safetyData || []).forEach((item, index) => {
+    const itemLat = Number(item.latitude);
+    const itemLon = Number(item.longitude);
+    if (isNaN(itemLat) || isNaN(itemLon)) return;
 
-      const distMeters = Math.round(haversineDistanceMeters(lat, lon, itemLat, itemLon));
-      if (distMeters <= SEARCH_RADIUS_METERS) {
-        const itemKey = item.id ?? `${itemLat}_${itemLon}_${item.city || item.area || 'historical'}`;
-        const existing = matchedSafetyAnalysisMap.get(itemKey);
+    const distMeters = Math.round(pointToPathDistanceMeters(itemLat, itemLon, path));
+    if (distMeters <= SEARCH_RADIUS_METERS) {
+      const rawObj = item.raw || item;
+      const crime_count = Number(item.crime_count ?? rawObj.crime_count ?? item.crimeCount ?? rawObj.crimeCount ?? 0);
+      const crime_type = item.crime_type ?? rawObj.crime_type ?? item.category ?? rawObj.category ?? item.report_type ?? "Other";
 
-        if (!existing || distMeters < existing.distance_from_route) {
-          const score = Number(item.safety_score ?? item.safetyScore ?? 70);
+      const itemKey = item.id ? String(item.id) : `${itemLat.toFixed(5)}_${itemLon.toFixed(5)}_${crime_type}_${crime_count}_${index}`;
+      const existing = matchedSafetyAnalysisMap.get(itemKey);
 
-          const rawObj = item.raw || item;
-          const crime_count = Number(item.crime_count ?? rawObj.crime_count ?? item.crimeCount ?? rawObj.crimeCount ?? 0);
-          const crime_type = item.crime_type ?? rawObj.crime_type ?? item.category ?? rawObj.category ?? item.report_type ?? "Other";
-          const time_of_day = item.time_of_day ?? rawObj.time_of_day ?? item.time_cycle ?? rawObj.time_cycle ?? "Anytime";
-          const lighting_score = Number(item.lighting_score ?? rawObj.lighting_score ?? item.lightingScore ?? rawObj.lightingScore ?? 5);
-          const crowd_density = item.crowd_density ?? rawObj.crowd_density ?? "Medium";
-          const incident_timestamp = item.incident_timestamp ?? rawObj.incident_timestamp;
+      if (!existing || distMeters < existing.distance_from_route) {
+        const time_of_day = item.time_of_day ?? rawObj.time_of_day ?? item.time_cycle ?? rawObj.time_cycle ?? "Anytime";
+        const lighting_score = Number(item.lighting_score ?? rawObj.lighting_score ?? item.lightingScore ?? rawObj.lightingScore ?? 5);
+        const crowd_density = item.crowd_density ?? rawObj.crowd_density ?? "Medium";
+        const incident_timestamp = item.incident_timestamp ?? rawObj.incident_timestamp;
 
-          const policeDistRaw = item.police_station_distance ?? rawObj.police_station_distance ?? item.police_station_distance_km ?? rawObj.police_station_distance_km;
-          const police_station_distance = policeDistRaw != null && policeDistRaw !== "" ? Number(policeDistRaw) : null;
-          const police_station_distance_km = police_station_distance !== null ? (police_station_distance <= 50 ? police_station_distance : police_station_distance / 1000) : null;
+        const policeDistRaw = item.police_station_distance ?? rawObj.police_station_distance ?? item.police_station_distance_km ?? rawObj.police_station_distance_km;
+        const police_station_distance = policeDistRaw != null && policeDistRaw !== "" ? Number(policeDistRaw) : null;
+        const police_station_distance_km = police_station_distance !== null ? (police_station_distance <= 50 ? police_station_distance : police_station_distance / 1000) : null;
 
-          const distance_weight = distMeters <= 50 ? 1.00
-            : distMeters <= 100 ? 0.90
-            : distMeters <= 250 ? 0.75
-            : distMeters <= 500 ? 0.50
-            : distMeters <= 750 ? 0.30
-            : 0.10;
+        const distance_weight = distMeters <= 50 ? 1.00
+          : distMeters <= 100 ? 0.90
+          : distMeters <= 250 ? 0.75
+          : distMeters <= 500 ? 0.50
+          : distMeters <= 750 ? 0.30
+          : 0.10;
 
-          matchedSafetyAnalysisMap.set(itemKey, {
-            id: item.id || itemKey,
-            city: item.city || rawObj.city || item.location_name || item.area || "Area Sentinel",
-            area: item.area || rawObj.area || item.city || "Sector",
-            category: item.area ? `Sector: ${item.area}` : item.city ? `City: ${item.city}` : "Historical Safety Zone",
-            latitude: itemLat,
-            longitude: itemLon,
-            crime_count,
-            crime_type,
-            time_of_day,
-            lighting_score,
-            police_station_distance,
-            police_station_distance_km,
-            crowd_density,
-            incident_timestamp,
-            time_cycle: time_of_day || "Historical Record",
-            intelligence_briefing: `Historical Crime: ${crime_type} (${crime_count} incident/s), Lighting: ${lighting_score}/10, Police Station: ${police_station_distance_km !== null ? police_station_distance_km.toFixed(1) + ' km' : 'N/A'}, Density: ${crowd_density}`,
-            distance_from_route: distMeters,
-            distance_weight,
-            raw: rawObj
-          });
-        }
+        matchedSafetyAnalysisMap.set(itemKey, {
+          id: item.id || itemKey,
+          city: item.city || rawObj.city || item.location_name || item.area || "Area Sentinel",
+          area: item.area || rawObj.area || item.city || "Sector",
+          category: item.area ? `Sector: ${item.area}` : item.city ? `City: ${item.city}` : "Historical Safety Zone",
+          latitude: itemLat,
+          longitude: itemLon,
+          crime_count,
+          crime_type,
+          time_of_day,
+          lighting_score,
+          police_station_distance,
+          police_station_distance_km,
+          crowd_density,
+          incident_timestamp,
+          time_cycle: time_of_day || "Historical Record",
+          intelligence_briefing: `Historical Crime: ${crime_type} (${crime_count} incident/s), Lighting: ${lighting_score}/10, Police Station: ${police_station_distance_km !== null ? police_station_distance_km.toFixed(1) + ' km' : 'N/A'}, Density: ${crowd_density}`,
+          distance_from_route: distMeters,
+          distance_weight,
+          raw: rawObj
+        });
       }
-    });
+    }
   });
 
   const matchedCommunityReports = Array.from(matchedCommunityReportsMap.values());
