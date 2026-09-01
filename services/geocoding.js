@@ -88,6 +88,10 @@ export async function reverseGeocodeAddress(latitude, longitude) {
   return null;
 }
 
+export async function reverseGeocode(lat, lon) {
+  return reverseGeocodeAddress(lat, lon);
+}
+
 export function useResolvedLocation(item) {
   const rawLoc = item?.location || item?.address || "";
   const lat = item?.latitude ?? item?.lat;
@@ -157,4 +161,3 @@ export function ReportLocationDisplay({ item, className = "", fallbackText = "Lo
     isLoading ? "Resolving location..." : (locationText || fallbackText)
   );
 }
-

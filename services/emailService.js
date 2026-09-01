@@ -3,7 +3,7 @@ import { Resend } from "resend";
 
 dotenv.config();
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 export async function sendEmergencyEmail({
   to,
@@ -16,11 +16,19 @@ export async function sendEmergencyEmail({
 }) {
   try {
     if (!process.env.RESEND_API_KEY) {
-      throw new Error("RESEND_API_KEY is missing in .env");
+      console.warn("⚠️ RESEND_API_KEY is missing in .env. Email notification skipped.");
+      return {
+        success: false,
+        error: "RESEND_API_KEY is missing in .env."
+      };
     }
 
     if (!process.env.FROM_EMAIL) {
-      throw new Error("FROM_EMAIL is missing in .env");
+      console.warn("⚠️ FROM_EMAIL is missing in .env. Email notification skipped.");
+      return {
+        success: false,
+        error: "FROM_EMAIL is missing in .env."
+      };
     }
 
     if (!to) {

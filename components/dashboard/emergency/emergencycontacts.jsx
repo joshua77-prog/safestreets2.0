@@ -47,6 +47,7 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
         relationship: newContact.relationship || "other"
       };
       await EmergencyContact.create(contactToSave);
+      EmergencyContact.clearCache();
       setNewContact({
         name: "",
         phone: "",
@@ -57,7 +58,9 @@ export default function EmergencyContacts({ contacts, loading, onContactsChange 
         notify_email: true
       });
       setShowAddForm(false);
-      onContactsChange();
+      if (onContactsChange) {
+        await onContactsChange();
+      }
     } catch (error) {
       console.error("Error adding contact:", error);
     }

@@ -31,6 +31,7 @@ export default function SafetyScoreCard({ scoreResult }) {
     communityReportsCount = 0,
     topPositiveFactors = [],
     topNegativeFactors = [],
+    totalDangerPenalty = scoreResult.totalDangerPenalty ?? scoreResult.dangerPenalty ?? 0,
     summary = {}
   } = scoreResult;
 

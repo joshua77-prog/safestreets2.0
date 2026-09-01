@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Input } from "@/components/ui/input.jsx";
 import { searchAddress } from "../../services/geocoding";
 import { Locate } from "lucide-react";
@@ -15,9 +15,19 @@ export default function SearchBox({
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const suppressSearchRef = useRef(false);
 
   useEffect(() => {
     let active = true;
+
+    // Suppress re-searching immediately after user selects a suggestion item
+    if (suppressSearchRef.current) {
+      suppressSearchRef.current = false;
+      setSuggestions([]);
+      setLoading(false);
+      return;
+    }
+
     const fetchSuggestions = async () => {
       if (!value || value.trim().length < 2) {
         setSuggestions([]);
@@ -38,7 +48,29 @@ export default function SearchBox({
     };
   }, [value]);
 
-  const showDropdown = suggestions.length > 0 || (isFocused && onSelectLive && !value);
+  const handleInputChange = (e) => {
+    suppressSearchRef.current = false;
+    onChange(e.target.value);
+  };
+
+  const handleSelectSuggestion = (item) => {
+    suppressSearchRef.current = true;
+    setSuggestions([]);
+    setIsFocused(false);
+    onSelect({
+      label: item.display_name,
+      coords: [parseFloat(item.lat), parseFloat(item.lon)],
+    });
+  };
+
+  const handleSelectLiveLocation = () => {
+    suppressSearchRef.current = true;
+    setSuggestions([]);
+    setIsFocused(false);
+    if (onSelectLive) onSelectLive();
+  };
+
+  const showDropdown = isFocused && (suggestions.length > 0 || (onSelectLive && !value));
 
   return (
     <div className="space-y-2">
@@ -51,7 +83,7 @@ export default function SearchBox({
           value={value}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleInputChange}
           placeholder={placeholder}
         />
         {loading && <div className="absolute right-3 top-2.5 text-xs text-slate-400 animate-pulse">Searching...</div>}
@@ -63,10 +95,10 @@ export default function SearchBox({
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSelectLive();
-                setSuggestions([]);
+                handleSelectLiveLocation();
               }}
-              className="w-full text-left px-3.5 py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors border-b border-slate-100"
+              onClick={handleSelectLiveLocation}
+              className="w-full text-left px-3.5 py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors border-b border-slate-100 cursor-pointer"
             >
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -79,14 +111,12 @@ export default function SearchBox({
             <button
               key={`${item.place_id}`}
               type="button"
-              onClick={() => {
-                onSelect({
-                  label: item.display_name,
-                  coords: [parseFloat(item.lat), parseFloat(item.lon)],
-                });
-                setSuggestions([]);
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelectSuggestion(item);
               }}
-              className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              onClick={() => handleSelectSuggestion(item)}
+              className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               {item.display_name}
             </button>

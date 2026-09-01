@@ -20,11 +20,21 @@ import SafetyScoreCard from "../components/navigation/SafetyScoreCard.jsx";
 import MapView from "../components/map/MapView.jsx";
 import RouteLayer from "../components/map/RouteLayer.jsx";
 import SearchBox from "../components/map/SearchBox.jsx";
+import TrustedPlacesSection from "../components/navigation/TrustedPlacesSection.jsx";
+import AddEditTrustedPlaceModal from "../components/navigation/AddEditTrustedPlaceModal.jsx";
+import TrustedPlaceDetailsCard from "../components/navigation/TrustedPlaceDetailsCard.jsx";
+
 import { evaluateAllRoutes, getFastestRoute, getSafestRoute } from "../services/routing";
 import { getCommunityReports, getSafetyData } from "../services/supabaseService";
 import { monitorRouteDeviation } from "../services/routeDeviationService";
 import { analyzeRouteSafetyData } from "../services/routeSafetyAnalysis";
 import { calculateSafetyScoreEngine } from "../services/safetyScoreEngine";
+import { 
+  getTrustedPlaces, 
+  addTrustedPlace, 
+  updateTrustedPlace, 
+  deleteTrustedPlace 
+} from "../services/trustedPlacesService";
 
 export default function SafeNavigation() {
   const [origin, setOrigin] = useState({ label: "", coords: null });
@@ -38,13 +48,50 @@ export default function SafeNavigation() {
   const [safetyError, setSafetyError] = useState("");
   const [deviationAlert, setDeviationAlert] = useState("");
 
+  // Trusted Places State
+  const [trustedPlaces, setTrustedPlaces] = useState([]);
+  const [trustedPlacesLoading, setTrustedPlacesLoading] = useState(true);
+  const [selectedTrustedPlace, setSelectedTrustedPlace] = useState(null);
+  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const [editingPlace, setEditingPlace] = useState(null);
+
   // Live Location & Camera Lock State
   const [userLiveCoords, setUserLiveCoords] = useState(null);
   const [flyToTarget, setFlyToTarget] = useState(null);
   const [recenterOnUser, setRecenterOnUser] = useState(true);
   const [isUserInteracting, setIsUserInteracting] = useState(false);
 
-  // 1. Initial live location fetch & continuous watchPosition for Origin
+  // 1. Load Trusted Places from Supabase
+  const loadTrustedPlacesData = async () => {
+    setTrustedPlacesLoading(true);
+    try {
+      const places = await getTrustedPlaces();
+      setTrustedPlaces(places || []);
+    } catch (err) {
+      console.error("Error loading trusted places:", err);
+    } finally {
+      setTrustedPlacesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTrustedPlacesData();
+
+    // Check for destination query params (e.g. from Profile Trusted Places navigation)
+    const params = new URLSearchParams(window.location.search);
+    const lat = params.get('destLat');
+    const lon = params.get('destLon');
+    const label = params.get('destLabel');
+    if (lat && lon) {
+      const coords = [parseFloat(lat), parseFloat(lon)];
+      setDestination({
+        label: label ? decodeURIComponent(label) : "Trusted Place",
+        coords
+      });
+    }
+  }, []);
+
+  // Initial live location fetch & continuous watchPosition for Origin
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -145,10 +192,9 @@ export default function SafeNavigation() {
     }
   };
 
-  const handleRouteCalculation = async () => {
-    if (!origin.coords || !destination.coords) return;
+  const calculateRouteWithCoords = async (srcCoords, destCoords) => {
+    if (!srcCoords || !destCoords) return;
     setLoading(true);
-    // Disable auto-recentering on live location updates when route is active
     setRecenterOnUser(false);
     setIsUserInteracting(false);
 
@@ -173,12 +219,76 @@ export default function SafeNavigation() {
 
       const routeResults = await evaluateAllRoutes(origin, destination, safetyContext);
       setRoutes(routeResults);
-      setSelectedRoute("safest"); // Default to safest route
+      setSelectedRoute("safest");
     } catch (error) {
       console.error("Routing error:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRouteCalculation = async () => {
+    if (!origin.coords || !destination.coords) return;
+    await calculateRouteWithCoords(origin.coords, destination.coords);
+  };
+
+  // Trusted Places Handlers
+  const handleSelectTrustedPlace = (place) => {
+    setSelectedTrustedPlace(place);
+    const placeCoords = [Number(place.latitude), Number(place.longitude)];
+    
+    // Set destination inputs
+    setDestination({
+      label: `${place.place_name} (${place.formatted_address})`,
+      coords: placeCoords
+    });
+
+    // Fly map camera to trusted place
+    setFlyToTarget({ coords: placeCoords, key: Date.now() });
+  };
+
+  const handleStartNavigationToTrustedPlace = async (place) => {
+    const placeCoords = [Number(place.latitude), Number(place.longitude)];
+    const srcCoords = origin.coords || userLiveCoords;
+
+    if (!srcCoords) {
+      alert("Please enable or select an Origin location to start navigation.");
+      return;
+    }
+
+    setDestination({
+      label: `${place.place_name} (${place.formatted_address})`,
+      coords: placeCoords
+    });
+
+    await calculateRouteWithCoords(srcCoords, placeCoords);
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingPlace(null);
+    setIsAddEditModalOpen(true);
+  };
+
+  const handleOpenEditModal = (place) => {
+    setEditingPlace(place);
+    setIsAddEditModalOpen(true);
+  };
+
+  const handleSaveTrustedPlace = async (placeData) => {
+    if (placeData.id) {
+      await updateTrustedPlace(placeData.id, placeData);
+    } else {
+      await addTrustedPlace(placeData);
+    }
+    await loadTrustedPlacesData();
+  };
+
+  const handleDeleteTrustedPlace = async (placeId) => {
+    await deleteTrustedPlace(placeId);
+    if (selectedTrustedPlace?.id === placeId) {
+      setSelectedTrustedPlace(null);
+    }
+    await loadTrustedPlacesData();
   };
 
   const handleLocateMe = () => {
@@ -225,7 +335,7 @@ export default function SafeNavigation() {
         <div>
           <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase tracking-[0.2em] text-xs mb-3">
             <Compass className="w-4 h-4" />
-            Strategic Routing
+            Strategic Routing & Safety Anchors
           </div>
           <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight">
             Safe <span className="gradient-text">Navigation</span>
@@ -247,9 +357,11 @@ export default function SafeNavigation() {
         </button>
       </div>
 
+      {/* Main Layout Grid */}
       <div className="grid lg:grid-cols-12 gap-10">
-        {/* Left Side: Controls & Insights */}
+        {/* Left Side: Controls & Insights & Trusted Places */}
         <div className="lg:col-span-5 space-y-8">
+          {/* Destination Setup Card */}
           <Card className="premium-card glass border-white/60 shadow-2xl p-8 bg-white/40">
             <div className="space-y-6">
               <div className="flex items-center gap-3 mb-2">
@@ -300,7 +412,7 @@ export default function SafeNavigation() {
 
               <Button 
                 onClick={handleRouteCalculation} 
-                className="w-full btn-premium btn-primary py-4 text-lg mt-4 h-auto"
+                className="w-full btn-premium btn-primary py-4 text-lg mt-4 h-auto font-bold"
                 disabled={loading || !origin.coords || !destination.coords}
               >
                 {loading ? (
@@ -330,6 +442,7 @@ export default function SafeNavigation() {
             </div>
           </Card>
 
+          {/* Route Comparison Display */}
           <AnimatePresence>
             {routes && (
               <motion.div
@@ -349,7 +462,7 @@ export default function SafeNavigation() {
 
         {/* Right Side: Map Feature */}
         <div className="lg:col-span-7">
-          <Card className="premium-card overflow-hidden shadow-2xl border-0 h-full flex flex-col min-h-[500px]">
+          <Card className="premium-card overflow-hidden shadow-2xl border-0 h-full flex flex-col min-h-[600px]">
             <div className="p-8 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
               <div>
                 <div className="flex items-center gap-3 mb-1">
@@ -359,18 +472,18 @@ export default function SafeNavigation() {
                   <h3 className="text-xl font-bold tracking-tight">Intelligence Map</h3>
                 </div>
                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest pl-11">
-                  Red Pin: Origin | Green Pin: Destination
+                  Green Pins: Trusted Places | Red Pin: Origin
                 </p>
               </div>
               
               <div className="flex gap-2">
                 <Button 
                   onClick={startNavigation} 
-                  className="btn-premium bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-lg shadow-emerald-500/20"
+                  className="btn-premium bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-lg shadow-emerald-500/20 font-bold"
                   disabled={!routes}
                 >
                   Start Mission
-                  <Navigation className="w-4 h-4 fill-white" />
+                  <Navigation className="w-4 h-4 fill-white ml-2" />
                 </Button>
               </div>
             </div>
@@ -386,6 +499,8 @@ export default function SafeNavigation() {
                   flyToTarget={flyToTarget}
                   safetyData={safetyData}
                   communityReports={communityReports}
+                  trustedPlaces={trustedPlaces}
+                  onSelectTrustedPlace={handleSelectTrustedPlace}
                   recenterOnUser={recenterOnUser && !isUserInteracting}
                   onUserInteract={() => {
                     setIsUserInteracting(true);
@@ -407,15 +522,10 @@ export default function SafeNavigation() {
                  <button 
                   onClick={handleLocateMe}
                   title="Recenter on live position"
-                  className="w-12 h-12 glass-dark rounded-xl flex items-center justify-center text-white hover:scale-110 transition-transform shadow-2xl"
+                  className="w-12 h-12 glass-dark rounded-xl flex items-center justify-center text-white hover:scale-110 transition-transform shadow-2xl cursor-pointer"
                  >
                     <Locate className="w-5 h-5 text-emerald-400" />
                  </button>
-                 <div className="flex flex-col gap-1 glass-dark rounded-xl p-1 text-white shadow-2xl">
-                    <button className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-lg font-bold">+</button>
-                    <div className="h-[1px] bg-white/10 mx-2"></div>
-                    <button className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-lg font-bold">-</button>
-                 </div>
               </div>
             </CardContent>
           </Card>
@@ -431,6 +541,15 @@ export default function SafeNavigation() {
       {routeAnalysis && (
         <NearbySafetyDisplay analysisResult={routeAnalysis} />
       )}
+
+      {/* Add / Edit Trusted Place Modal */}
+      <AddEditTrustedPlaceModal
+        isOpen={isAddEditModalOpen}
+        onClose={() => setIsAddEditModalOpen(false)}
+        onSave={handleSaveTrustedPlace}
+        editingPlace={editingPlace}
+        userLocation={userLiveCoords}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { User as UserEntity, EmergencyContact } from "@/entities/all";
 import { supabase } from "./src/lib/supabase";
+import UserAvatar from "@/components/UserAvatar.jsx";
 import { 
   Shield, 
   Navigation, 
@@ -21,8 +22,20 @@ export default function Layout({ children, currentPageName }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(() => UserEntity.isAuthenticated());
+  const [avatarId, setAvatarId] = useState(null);
 
   useEffect(() => {
+    const loadAvatar = async () => {
+      try {
+        const localUser = await UserEntity.me();
+        const { data: { user: sbUser } } = await supabase.auth.getUser();
+        const currentAvatarId = sbUser?.user_metadata?.avatar_id || localUser?.avatar_id || localUser?.user_metadata?.avatar_id || "avatar_01";
+        setAvatarId(currentAvatarId);
+      } catch (err) {
+        setAvatarId("avatar_01");
+      }
+    };
+
     const checkAuth = async () => {
       const { data } = await supabase.auth.getSession();
       const hasSession = !!data?.session;
@@ -31,13 +44,21 @@ export default function Layout({ children, currentPageName }) {
       if (!isAuth) {
         EmergencyContact.clearCache();
       }
+      await loadAvatar();
     };
 
     checkAuth();
 
+    const handleAvatarChange = () => {
+      loadAvatar();
+    };
+
+    window.addEventListener("user_avatar_changed", handleAvatarChange);
+
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setIsAuthenticated(true);
+        loadAvatar();
       } else {
         EmergencyContact.clearCache();
         setIsAuthenticated(false);
@@ -45,6 +66,7 @@ export default function Layout({ children, currentPageName }) {
     });
 
     return () => {
+      window.removeEventListener("user_avatar_changed", handleAvatarChange);
       authListener?.subscription?.unsubscribe();
     };
   }, [location.pathname]);
@@ -82,7 +104,7 @@ export default function Layout({ children, currentPageName }) {
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/80">
-                    {isAuthenticated ? "Active Guardian" : "Guest Mode"}
+                    {isAuthenticated ? "SAFETY PROFILE" : "Guest Mode"}
                   </p>
                 </div>
               </div>
@@ -155,8 +177,8 @@ export default function Layout({ children, currentPageName }) {
                   <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
                 </button>
                 <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
-                <Link to="/profile" className="w-11 h-11 rounded-2xl overflow-hidden border-2 border-white shadow-md hover:scale-110 transition-transform duration-300">
-                  <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User" className="w-full h-full object-cover" />
+                <Link to="/profile" title="View Safety Profile" className="w-11 h-11 rounded-2xl overflow-hidden border-2 border-white shadow-md hover:scale-110 transition-transform duration-300">
+                  <UserAvatar avatarId={avatarId} className="w-full h-full" />
                 </Link>
                 <button
                   onClick={handleLogout}
