@@ -344,3 +344,22 @@ export async function updateSafetyScore(updates = {}, filters = {}) {
     return [];
   }
 }
+
+export async function deleteCommunityReport(id) {
+  if (!id) return false;
+  try {
+    const { error } = await supabase
+      .from(PRIMARY_COMMUNITY_REPORTS_TABLE)
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.warn("Supabase report delete notice:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Exception during report delete:", err);
+    return false;
+  }
+}

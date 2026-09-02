@@ -14,6 +14,7 @@ import {
   Calendar
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { ReportLocationDisplay } from "../../../services/geocoding.js";
 
 // Fix default marker assets for Leaflet in bundlers
 delete L.Icon.Default.prototype._getIconUrl;
@@ -219,7 +220,9 @@ export default function SafetyMap({ reports = [] }) {
                           </h4>
                           <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 mt-0.5">
                             <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{report.location || `${lat.toFixed(4)}, ${lon.toFixed(4)}`}</span>
+                            <span className="truncate">
+                              <ReportLocationDisplay item={report} fallbackText="Location Recorded" />
+                            </span>
                           </p>
                         </div>
 

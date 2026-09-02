@@ -15,6 +15,7 @@ import {
   Navigation
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { ReportLocationDisplay } from "../../services/geocoding.js";
 
 const formatDate = (dateVal) => {
   if (!dateVal) return "Recently";
@@ -76,10 +77,14 @@ export default function RecentActivity({ title, items, type, loading }) {
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="w-20 h-20 rounded-[2rem] bg-slate-50 flex items-center justify-center mb-6">
-               <Zap className="w-10 h-10 text-slate-200" />
+               <Shield className="w-10 h-10 text-slate-300" />
             </div>
-            <h4 className="text-slate-900 font-bold mb-1">Clear Data Logs</h4>
-            <p className="text-sm text-slate-400">Security protocols reporting no activity.</p>
+            <h4 className="text-slate-900 font-bold mb-1">
+              {type === 'alerts' ? 'No emergency alerts' : 'No intelligence reports'}
+            </h4>
+            <p className="text-sm text-slate-400">
+              {type === 'alerts' ? 'No emergency alerts recorded.' : 'No community safety reports recorded.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -101,7 +106,7 @@ export default function RecentActivity({ title, items, type, loading }) {
                       <div className="flex items-center gap-2 mb-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
                         <p className="text-sm font-black text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">
-                          {item.location || 'Encrypted Position'}
+                          <ReportLocationDisplay item={item} fallbackText="Encrypted Position" />
                         </p>
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">

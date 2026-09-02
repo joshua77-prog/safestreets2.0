@@ -48,50 +48,76 @@ const actions = [
   },
 ];
 
+const themeStyles = {
+  emerald: {
+    bgGrad: "bg-gradient-to-tr from-emerald-500 to-emerald-400",
+    lineBg: "bg-emerald-500",
+    iconText: "text-white"
+  },
+  rose: {
+    bgGrad: "bg-gradient-to-tr from-rose-500 to-rose-400",
+    lineBg: "bg-rose-500",
+    iconText: "text-white"
+  },
+  indigo: {
+    bgGrad: "bg-gradient-to-tr from-indigo-500 to-indigo-400",
+    lineBg: "bg-indigo-500",
+    iconText: "text-white"
+  },
+  amber: {
+    bgGrad: "bg-gradient-to-tr from-amber-500 to-amber-400",
+    lineBg: "bg-amber-500",
+    iconText: "text-white"
+  }
+};
+
 export default function QuickActions() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      {actions.map((action, index) => (
-        <motion.div
-          key={action.title}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.1 }}
-          whileHover={{ y: -8 }}
-        >
-          <Link to={action.link} className="block h-full">
-            <div className="premium-card glass p-8 h-full bg-white/40 border-white/50 shadow-lg hover:shadow-2xl hover:border-emerald-500/20 group">
-              <div className="flex items-start justify-between mb-8">
-                <div className={`w-14 h-14 bg-gradient-to-tr from-${action.color}-500 to-${action.color}-400 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-500`}>
-                  <action.icon className="w-7 h-7 text-white" />
+      {actions.map((action, index) => {
+        const theme = themeStyles[action.color] || themeStyles.emerald;
+        return (
+          <motion.div
+            key={action.title}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            whileHover={{ y: -8 }}
+          >
+            <Link to={action.link} className="block h-full">
+              <div className="premium-card glass p-8 h-full bg-white/40 border-white/50 shadow-lg hover:shadow-2xl hover:border-emerald-500/20 group">
+                <div className="flex items-start justify-between mb-8">
+                  <div className={`w-14 h-14 ${theme.bgGrad} rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-500`}>
+                    <action.icon className={`w-7 h-7 ${theme.iconText}`} />
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                     <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500">
+                       <ArrowUpRight className="w-4 h-4" />
+                     </div>
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{action.badge}</span>
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500">
-                     <ArrowUpRight className="w-4 h-4" />
-                   </div>
-                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{action.badge}</span>
+                
+                <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tight group-hover:text-emerald-700 transition-colors">
+                  {action.title}
+                </h3>
+                <p className="text-sm text-slate-500 leading-relaxed font-medium">
+                  {action.description}
+                </p>
+                
+                <div className="mt-6 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                   <motion.div 
+                     initial={{ width: 0 }}
+                     animate={{ width: "100%" }}
+                     transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
+                     className={`h-full ${theme.lineBg} opacity-40`}
+                   />
                 </div>
               </div>
-              
-              <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tight group-hover:text-emerald-700 transition-colors">
-                {action.title}
-              </h3>
-              <p className="text-sm text-slate-500 leading-relaxed font-medium">
-                {action.description}
-              </p>
-              
-              <div className="mt-6 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                 <motion.div 
-                   initial={{ width: 0 }}
-                   animate={{ width: "100%" }}
-                   transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
-                   className={`h-full bg-${action.color}-500 opacity-20`}
-                 />
-              </div>
-            </div>
-          </Link>
-        </motion.div>
-      ))}
+            </Link>
+          </motion.div>
+        );
+      })}
     </div>
   );
 }

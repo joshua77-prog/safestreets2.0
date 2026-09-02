@@ -24,8 +24,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../../../src/lib/supabase";
-import { geocodeAddress, searchAddress } from "../../../services/geocoding.js";
+import { geocodeAddress, searchAddress, reverseGeocodeAddress } from "../../../services/geocoding.js";
 import { addCommunityReport } from "../../../services/supabaseService.js";
+import { SafetyReport } from "../../../entities/all.js";
 
 const POSITIVE_REPORTS = [
   "Brightly Lit Street",
@@ -265,7 +266,8 @@ export default function ReportForm({ onSubmit, onCancel }) {
       }
       finalLat = Number(currentLat);
       finalLon = Number(currentLon);
-      finalLocationName = `Current GPS (${finalLat.toFixed(4)}, ${finalLon.toFixed(4)})`;
+      const resolvedGeo = await reverseGeocodeAddress(finalLat, finalLon);
+      finalLocationName = resolvedGeo || `Current GPS (${finalLat.toFixed(4)}, ${finalLon.toFixed(4)})`;
     } else {
       // Manual address mode
       if (!manualAddress || !manualAddress.trim()) {
@@ -314,13 +316,12 @@ export default function ReportForm({ onSubmit, onCancel }) {
     setSubmitting(true);
 
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        console.error("Supabase authentication error:", authError);
-        setSupabaseError("User authentication failed. Please make sure you are logged in.");
-        setSubmitting(false);
-        return;
+      let userId = "local_user";
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) userId = user.id;
+      } catch (authErr) {
+        console.warn("Auth check notice:", authErr);
       }
 
       const timeCycleMap = {
@@ -337,7 +338,7 @@ export default function ReportForm({ onSubmit, onCancel }) {
       };
 
       const payload = {
-        user_id: user.id,
+        user_id: userId,
         report_type: reportType,
         category: category,
         latitude: finalLat,
@@ -346,10 +347,11 @@ export default function ReportForm({ onSubmit, onCancel }) {
         time_cycle: timeCycleMap[formData.time_of_day] || formData.time_of_day,
         safety_rating: Number(formData.safety_rating),
         intelligence_briefing: formData.description || "",
+        description: formData.description || ""
       };
 
-      const insertedData = await addCommunityReport(payload);
-      console.log("Report stored in community_reports table successfully:", insertedData);
+      const insertedData = await SafetyReport.create(payload);
+      console.log("Observation report saved successfully:", insertedData);
       setSuccessMessage("Observation report saved successfully!");
       if (onSubmit) await onSubmit(insertedData || payload);
 

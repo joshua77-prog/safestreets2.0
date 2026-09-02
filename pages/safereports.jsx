@@ -56,9 +56,18 @@ export default function SafetyReports() {
     }
   };
 
+  const handleDeleteReport = async (reportId) => {
+    try {
+      await SafetyReport.delete(reportId);
+      setReports(prev => prev.filter(r => r.id !== reportId));
+    } catch (error) {
+      console.error("Error deleting report:", error);
+    }
+  };
+
   const filteredReports = reports.filter(report => {
     const matchesFilter = filterType === "all" || report.report_type === filterType;
-    const matchesSearch = report.location.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const matchesSearch = (report.location && report.location.toLowerCase().includes(searchQuery.toLowerCase())) || 
                          (report.description && report.description.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesFilter && matchesSearch;
   });
@@ -160,6 +169,7 @@ export default function SafetyReports() {
                   loading={loading}
                   filterType={filterType}
                   onFilterChange={setFilterType}
+                  onDeleteReport={handleDeleteReport}
                 />
               </TabsContent>
               
@@ -172,29 +182,6 @@ export default function SafetyReports() {
           </AnimatePresence>
         </Tabs>
       </div>
-
-      {/* Global Alert Banner */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        whileInView={{ opacity: 1, scale: 1 }}
-        viewport={{ once: true }}
-      >
-        <div className="premium-card glass-dark p-8 flex flex-col md:flex-row items-center gap-8 border-0">
-           <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-emerald-500/30">
-              <Sparkles className="w-8 h-8 text-emerald-400" />
-           </div>
-           <div className="flex-grow text-center md:text-left">
-              <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Community Sentinel Program</h3>
-              <p className="text-slate-400 leading-relaxed font-medium">
-                Your contributions help refine our <span className="text-emerald-400 italic">Predictive Guard Layer</span>. 
-                Every report logged increases the safety index for thousands of users in your vicinity.
-              </p>
-           </div>
-           <Button className="btn-premium bg-white text-slate-900 hover:bg-emerald-50 h-auto py-3">
-              Learn Protocol
-           </Button>
-        </div>
-      </motion.div>
 
       {/* Modal Form Overlay */}
       <AnimatePresence>

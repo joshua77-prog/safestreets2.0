@@ -195,17 +195,6 @@ export default function Emergency() {
             Emergency <span className="gradient-text-rose">Center</span>
           </h1>
         </div>
-        
-        <div className="flex items-center gap-4">
-           <div className="flex items-center gap-2 glass px-4 py-2 rounded-2xl text-emerald-600 font-bold uppercase tracking-widest text-[10px] border-emerald-100">
-              <Wifi className="w-3 h-3" />
-              Secure Uplink
-           </div>
-           <div className="flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-2xl text-white font-bold uppercase tracking-widest text-[10px]">
-              <Activity className="w-3 h-3 text-emerald-400" />
-              Live Monitoring
-           </div>
-        </div>
       </div>
 
       <AnimatePresence>
@@ -269,12 +258,6 @@ export default function Emergency() {
         {/* SOS Action Center */}
         <div className="lg:col-span-12 space-y-4">
             <SOSButton onSOSAlert={handleSOSAlert} disabled={!!activeAlert} />
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={() => triggerSensorWorkflow('Wearable', 'Wearable SOS trigger received')} className="bg-emerald-600 text-white">Wearable SOS</Button>
-              <Button onClick={() => triggerSensorWorkflow('Pressure Sensor', 'Pressure sensor trigger received')} className="bg-slate-900 text-white">Pressure Sensor</Button>
-              <Button onClick={() => triggerSensorWorkflow('Motion Sensor', 'Motion sensor trigger received')} className="bg-rose-600 text-white">Motion Sensor</Button>
-              <Button onClick={() => triggerSensorWorkflow('Accelerometer', 'Accelerometer trigger received')} className="bg-amber-600 text-white">Accelerometer</Button>
-            </div>
         </div>
 
         {/* Tactical Controls */}
