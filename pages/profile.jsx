@@ -140,7 +140,7 @@ export default function Profile() {
       const emergencyContacts = await EmergencyContact.list();
       setContacts(emergencyContacts || []);
 
-      const places = await getTrustedPlaces();
+      const places = await getTrustedPlaces(targetUserId);
       setTrustedPlaces(places || []);
       setTrustedPlacesCount(places?.length || 0);
 
@@ -163,11 +163,12 @@ export default function Profile() {
 
   const handleSavePlace = async (placePayload) => {
     try {
+      const activeUserId = user?.id;
       if (editingPlace) {
-        await updateTrustedPlace(editingPlace.id, placePayload);
+        await updateTrustedPlace(editingPlace.id, placePayload, activeUserId);
         setPlaceFeedback({ type: "success", message: `Updated "${placePayload.place_name}" successfully.` });
       } else {
-        await addTrustedPlace(placePayload);
+        await addTrustedPlace(placePayload, activeUserId);
         setPlaceFeedback({ type: "success", message: `Added "${placePayload.place_name}" to Trusted Places.` });
       }
       await loadUserData();
@@ -182,7 +183,7 @@ export default function Profile() {
 
   const handleDeletePlace = async (placeId) => {
     try {
-      await deleteTrustedPlace(placeId);
+      await deleteTrustedPlace(placeId, user?.id);
       if (selectedTrustedPlace?.id === placeId) {
         setSelectedTrustedPlace(null);
       }

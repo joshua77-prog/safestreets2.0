@@ -25,46 +25,22 @@ L.Icon.Default.mergeOptions({
 });
 
 /**
- * Determine report safety classification and marker color strictly based on report data.
- * RED: Risky / Unsafe (safety_rating <= 2 or Negative Report / incident categories)
- * YELLOW: Neutral / Caution (safety_rating == 3 or moderate categories)
- * GREEN: Safe / Positive (safety_rating >= 4 or Positive Report / safe zone categories)
+ * Determine report marker color strictly based on star rating:
+ * 1–2 stars → Red
+ * 3 stars → Yellow
+ * 4–5 stars → Green
  */
 export function getReportSafetyStatus(report) {
-  const rating = Number(report.safety_rating);
-  const rType = String(report.report_type || '').toLowerCase();
-  const category = String(report.category || '').toLowerCase();
+  const rawRating = report.safety_rating ?? report.rating;
+  const rating = Number(rawRating);
 
-  const isExplicitNegative =
-    rType.includes('negative') ||
-    rType.includes('incident') ||
-    rType.includes('suspicious') ||
-    category.includes('harassment') ||
-    category.includes('theft') ||
-    category.includes('assault') ||
-    category.includes('hazard') ||
-    category.includes('animal') ||
-    category.includes('drunk') ||
-    category.includes('isolated');
-
-  const isExplicitPositive =
-    rType.includes('positive') ||
-    rType.includes('safe_zone') ||
-    rType.includes('police') ||
-    category.includes('bright') ||
-    category.includes('busy') ||
-    category.includes('foot traffic') ||
-    category.includes('patrol') ||
-    category.includes('cctv') ||
-    category.includes('guarded');
-
-  if (isExplicitNegative || (!isNaN(rating) && rating <= 2)) {
-    return { color: '#ef4444', label: 'Unsafe / Risky', badgeClass: 'bg-rose-500 text-white', type: 'red' };
+  if (!isNaN(rating) && rating <= 2) {
+    return { color: '#ef4444', label: '1–2 Stars (Risky)', badgeClass: 'bg-rose-500 text-white', type: 'red' };
   }
-  if (isExplicitPositive || (!isNaN(rating) && rating >= 4)) {
-    return { color: '#22c55e', label: 'Safe / Positive', badgeClass: 'bg-emerald-500 text-white', type: 'green' };
+  if (!isNaN(rating) && rating >= 4) {
+    return { color: '#22c55e', label: '4–5 Stars (Safe)', badgeClass: 'bg-emerald-500 text-white', type: 'green' };
   }
-  return { color: '#eab308', label: 'Neutral / Caution', badgeClass: 'bg-amber-500 text-white', type: 'yellow' };
+  return { color: '#eab308', label: '3 Stars (Caution)', badgeClass: 'bg-amber-500 text-white', type: 'yellow' };
 }
 
 // Leaflet DivIcons for Red, Yellow, Green report markers with animated blinking dot + pulsing outer glow

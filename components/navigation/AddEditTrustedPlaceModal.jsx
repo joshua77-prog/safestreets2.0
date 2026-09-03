@@ -34,8 +34,8 @@ export default function AddEditTrustedPlaceModal({
   editingPlace = null,
   userLocation = null
 }) {
-  const [placeName, setPlaceName] = useState("");
   const [category, setCategory] = useState("Home");
+  const [customPlaceName, setCustomPlaceName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCoords, setSelectedCoords] = useState(null);
   const [formattedAddress, setFormattedAddress] = useState("");
@@ -48,14 +48,19 @@ export default function AddEditTrustedPlaceModal({
 
   useEffect(() => {
     if (editingPlace) {
-      setPlaceName(editingPlace.place_name || "");
-      setCategory(editingPlace.category || "Home");
+      const cat = editingPlace.category || "Home";
+      setCategory(cat);
+      if (cat === "Other") {
+        setCustomPlaceName(editingPlace.place_name || "");
+      } else {
+        setCustomPlaceName("");
+      }
       setFormattedAddress(editingPlace.formatted_address || "");
       setSearchQuery(editingPlace.formatted_address || "");
       setSelectedCoords([Number(editingPlace.latitude), Number(editingPlace.longitude)]);
     } else {
-      setPlaceName("");
       setCategory("Home");
+      setCustomPlaceName("");
       setFormattedAddress("");
       setSearchQuery("");
       setSelectedCoords(null);
@@ -131,8 +136,10 @@ export default function AddEditTrustedPlaceModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!placeName.trim()) {
-      setErrorMessage("Please enter a name for this place.");
+    const resolvedPlaceName = category === "Other" ? customPlaceName.trim() : category;
+
+    if (category === "Other" && !customPlaceName.trim()) {
+      setErrorMessage("Please enter a custom place type/name.");
       return;
     }
     if (!selectedCoords || !formattedAddress.trim()) {
@@ -146,7 +153,7 @@ export default function AddEditTrustedPlaceModal({
     try {
       await onSave({
         id: editingPlace?.id,
-        place_name: placeName.trim(),
+        place_name: resolvedPlaceName,
         category,
         formatted_address: formattedAddress.trim(),
         latitude: selectedCoords[0],
@@ -192,22 +199,7 @@ export default function AddEditTrustedPlaceModal({
             </div>
           )}
 
-          {/* Place Name */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Place Name
-            </label>
-            <Input
-              type="text"
-              placeholder="e.g. My Apartment, Campus, Office"
-              value={placeName}
-              onChange={(e) => setPlaceName(e.target.value)}
-              className="rounded-2xl border-slate-200 focus:border-slate-900 text-base"
-              required
-            />
-          </div>
-
-          {/* Category */}
+          {/* Category Selection */}
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
               Category
@@ -220,7 +212,12 @@ export default function AddEditTrustedPlaceModal({
                   <button
                     key={cat.value}
                     type="button"
-                    onClick={() => setCategory(cat.value)}
+                    onClick={() => {
+                      setCategory(cat.value);
+                      if (cat.value !== "Other") {
+                        setCustomPlaceName("");
+                      }
+                    }}
                     className={`flex items-center gap-2 p-3 rounded-2xl border text-xs font-bold transition-all text-left ${
                       isSelected
                         ? "bg-slate-900 text-white border-slate-900 shadow-md scale-[1.02]"
@@ -234,6 +231,23 @@ export default function AddEditTrustedPlaceModal({
               })}
             </div>
           </div>
+
+          {/* Custom Place Type / Name input (rendered ONLY when Other is selected) */}
+          {category === "Other" && (
+            <div className="space-y-2 animate-in fade-in duration-150">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                Custom Place Type / Name
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g. Hospital, Gym, Bus Stop, Library"
+                value={customPlaceName}
+                onChange={(e) => setCustomPlaceName(e.target.value)}
+                className="rounded-2xl border-slate-200 focus:border-slate-900 text-base"
+                required={category === "Other"}
+              />
+            </div>
+          )}
 
           {/* Location Search & Current Location */}
           <div className="space-y-2 relative">
@@ -315,7 +329,7 @@ export default function AddEditTrustedPlaceModal({
             </Button>
             <Button
               type="submit"
-              disabled={saving || !selectedCoords || !placeName.trim()}
+              disabled={saving || !selectedCoords || (category === "Other" && !customPlaceName.trim())}
               className="btn-premium btn-primary rounded-2xl px-6 py-3 font-bold flex items-center gap-2"
             >
               {saving ? (

@@ -1,4 +1,4 @@
-import { supabase } from "../src/lib/supabase";
+import { supabase } from "../src/lib/supabase.js";
 
 export const TRUSTED_PLACE_PROXIMITY_THRESHOLD_METERS = 500;
 
@@ -21,12 +21,22 @@ function writeUserStore(userId, places) {
   }
 }
 
-async function getAuthUserId() {
+async function getAuthUserId(overrideUserId = null) {
+  if (overrideUserId && overrideUserId !== "me" && overrideUserId !== "guest") {
+    return overrideUserId;
+  }
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.id) return user.id;
     const { data: sessionData } = await supabase.auth.getSession();
     if (sessionData?.session?.user?.id) return sessionData.session.user.id;
+    if (typeof window !== "undefined") {
+      const localUser = localStorage.getItem("current_user");
+      if (localUser) {
+        const u = JSON.parse(localUser);
+        if (u?.id && u.id !== "me" && u.id !== "guest") return u.id;
+      }
+    }
     return null;
   } catch {
     return null;
@@ -36,8 +46,8 @@ async function getAuthUserId() {
 /**
  * Fetch all Trusted Places for the authenticated user from Supabase with RLS.
  */
-export async function getTrustedPlaces() {
-  const userId = await getAuthUserId();
+export async function getTrustedPlaces(overrideUserId = null) {
+  const userId = await getAuthUserId(overrideUserId);
   if (!userId) return [];
 
   try {
@@ -64,8 +74,8 @@ export async function getTrustedPlaces() {
 /**
  * Add a new Trusted Place to Supabase for the authenticated user.
  */
-export async function addTrustedPlace(placeData) {
-  const userId = await getAuthUserId();
+export async function addTrustedPlace(placeData, overrideUserId = null) {
+  const userId = await getAuthUserId(overrideUserId);
   if (!userId) {
     throw new Error("User authentication required to save a trusted place.");
   }
@@ -116,8 +126,8 @@ export async function addTrustedPlace(placeData) {
 /**
  * Update an existing Trusted Place for the authenticated user.
  */
-export async function updateTrustedPlace(id, updates) {
-  const userId = await getAuthUserId();
+export async function updateTrustedPlace(id, updates, overrideUserId = null) {
+  const userId = await getAuthUserId(overrideUserId);
   if (!userId || !id) {
     throw new Error("Authentication and valid place ID required to update.");
   }
@@ -165,8 +175,8 @@ export async function updateTrustedPlace(id, updates) {
 /**
  * Delete a Trusted Place for the authenticated user.
  */
-export async function deleteTrustedPlace(id) {
-  const userId = await getAuthUserId();
+export async function deleteTrustedPlace(id, overrideUserId = null) {
+  const userId = await getAuthUserId(overrideUserId);
   if (!userId || !id) return false;
 
   try {

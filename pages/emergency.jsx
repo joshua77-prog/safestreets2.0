@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { EmergencyContact, SOSAlert, triggerSOS } from "../entities/all.js";
 import { supabase } from "../src/lib/supabase.js";
 import { useLocationTracking } from "../hooks/useLocationTracking.js";
@@ -21,7 +22,8 @@ import {
   Building,
   HeartPulse,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  Navigation
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -30,8 +32,16 @@ import EmergencyContacts from "../components/emergency/emergencycontacts.jsx";
 import { VoiceActivation } from "../components/emergency/VoiceActivation.jsx";
 import { getTrustedPlaces, findNearbyTrustedPlace, TRUSTED_PLACE_PROXIMITY_THRESHOLD_METERS } from "../services/trustedPlacesService.js";
 import { findNearestPoliceStation, findNearestHospital } from "../services/nearbySafetyService.js";
+import { 
+  getSOSState, 
+  startSOSCountdown, 
+  cancelSOSCountdown, 
+  resolveActiveSOSAlert, 
+  finalizeSOSWorkflow 
+} from "../services/sosStateService.js";
 
 export default function Emergency() {
+  const navigate = useNavigate();
   const { getCurrentLocation, reverseGeocode, saveLocation } = useLocationTracking();
 
   const [contacts, setContacts] = useState([]);
@@ -49,6 +59,57 @@ export default function Emergency() {
   const [nearbyTrustedPlaceResult, setNearbyTrustedPlaceResult] = useState(null);
   const [nearestPoliceStation, setNearestPoliceStation] = useState(null);
   const [nearestHospital, setNearestHospital] = useState(null);
+
+  // Sync state with sosStateService
+  const syncSOSState = () => {
+    const currentState = getSOSState();
+    if (currentState.status === "countdown") {
+      setCountdownActive(true);
+      setCountdownSeconds(currentState.remainingSeconds);
+      setWorkflowStatus("Countdown active");
+      setWorkflowMessage(`${currentState.source || "SOS"} trigger received. Emergency protocol will activate in ${currentState.remainingSeconds} seconds.`);
+      if (currentState.remainingSeconds <= 0) {
+        void handleFinalizeSOS();
+      }
+    } else if (currentState.status === "active") {
+      setCountdownActive(false);
+      setActiveAlert(currentState.activeAlert);
+      if (currentState.location) {
+        setLastKnownLocation({
+          latitude: Number(currentState.location.latitude),
+          longitude: Number(currentState.location.longitude)
+        });
+      }
+      setWorkflowStatus("Dispatching support");
+    } else {
+      setCountdownActive(false);
+      if (activeAlert && currentState.status === "idle") {
+        setActiveAlert(null);
+      }
+    }
+  };
+
+  const handleFinalizeSOS = async () => {
+    try {
+      setWorkflowStatus("Dispatching support");
+      const res = await finalizeSOSWorkflow(contacts);
+      setActiveAlert(res.alert);
+      if (res.location) {
+        setLastKnownLocation({
+          latitude: Number(res.location.latitude),
+          longitude: Number(res.location.longitude)
+        });
+      }
+      setCountdownActive(false);
+      const locDisplay = res.location?.address || `${Number(res.location?.latitude).toFixed(4)}, ${Number(res.location?.longitude).toFixed(4)}`;
+      setWorkflowMessage(`SOS dispatch active at ${locDisplay}.`);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 300]);
+    } catch (err) {
+      console.error("Failed to finalize SOS:", err);
+      setWorkflowStatus("Location error");
+      setWorkflowMessage(err.message || "Emergency dispatch error.");
+    }
+  };
 
   const loadEmergencyData = async () => {
     try {
@@ -70,6 +131,10 @@ export default function Emergency() {
 
   useEffect(() => {
     loadEmergencyData();
+    syncSOSState();
+
+    const handleStateChange = () => syncSOSState();
+    window.addEventListener("sos_state_changed", handleStateChange);
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       setContacts([]);
@@ -80,9 +145,32 @@ export default function Emergency() {
     });
 
     return () => {
+      window.removeEventListener("sos_state_changed", handleStateChange);
       authListener?.subscription?.unsubscribe();
     };
   }, []);
+
+  // Real-time ticking interval for countdown
+  useEffect(() => {
+    if (!countdownActive) return undefined;
+
+    const timer = window.setInterval(() => {
+      const currentState = getSOSState();
+      if (currentState.status === "countdown") {
+        setCountdownSeconds(currentState.remainingSeconds);
+        setWorkflowMessage(`${currentState.source || "SOS"} trigger received. Emergency protocol will activate in ${currentState.remainingSeconds} seconds.`);
+
+        if (currentState.remainingSeconds <= 1) {
+          window.clearInterval(timer);
+          void handleFinalizeSOS();
+        }
+      } else {
+        setCountdownActive(false);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [countdownActive, contacts]);
 
   // Update Trusted Place & Nearby Police/Hospital context when location/activeAlert changes
   useEffect(() => {
@@ -114,84 +202,8 @@ export default function Emergency() {
     return () => { isMounted = false; };
   }, [activeAlert, lastKnownLocation, trustedPlaces]);
 
-  useEffect(() => {
-    if (!countdownActive) return undefined;
-
-    const timer = window.setInterval(() => {
-      setCountdownSeconds((previous) => {
-        if (previous <= 1) {
-          window.clearInterval(timer);
-          void finalizeEmergencyWorkflow();
-          return 0;
-        }
-
-        return previous - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [countdownActive]);
-
-  useEffect(() => {
-    const handleOnline = () => {
-      void flushOfflineQueue();
-    };
-
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, []);
-
-  const persistOfflineLocation = (location) => {
-    if (typeof window === "undefined") return;
-
-    const stored = JSON.parse(window.localStorage.getItem("pendingEmergencyLocations") || "[]");
-    const payload = {
-      ...location,
-      stagedAt: new Date().toISOString(),
-    };
-    stored.push(payload);
-    window.localStorage.setItem("pendingEmergencyLocations", JSON.stringify(stored));
-    setLastKnownLocation(location);
-  };
-
-  const flushOfflineQueue = async () => {
-    if (typeof window === "undefined" || !window.navigator.onLine) return;
-
-    const stored = JSON.parse(window.localStorage.getItem("pendingEmergencyLocations") || "[]");
-    if (!stored.length) return;
-
-    window.localStorage.removeItem("pendingEmergencyLocations");
-    setWorkflowMessage("Buffered location data is being resent now.");
-  };
-
-  const finalizeEmergencyWorkflow = async (alertType = 'manual_sos', message = '', source = 'SOS') => {
-    setCountdownActive(false);
-    setWorkflowStatus("Dispatching support");
-
-    try {
-      const res = await triggerSOS(
-        alertType,
-        `${message || "Emergency assistance needed"} [${source}]`,
-        contacts.map((contact) => contact.id)
-      );
-
-      const alert = res.alert;
-      const location = res.location;
-
-      setActiveAlert(alert);
-      setLastKnownLocation({ latitude: Number(location.latitude), longitude: Number(location.longitude) });
-
-      const locDisplay = location.address || `${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`;
-      setWorkflowMessage(`SOS dispatch active at ${locDisplay} (retrieved from user_locations).`);
-      if (navigator.vibrate) navigator.vibrate([200, 100, 300]);
-    } catch (error) {
-      console.error("SOS workflow error:", error);
-      setWorkflowStatus("Location error");
-      setWorkflowMessage(error.message || "No location found in user_locations database table. Please enable location tracking before sending SOS.");
-    }
-  };
-
   const startEmergencyWorkflow = (alertType = 'manual_sos', message = '', source = 'SOS') => {
+    startSOSCountdown(alertType, message, source);
     setCountdownActive(true);
     setCountdownSeconds(45);
     setWorkflowStatus("Countdown active");
@@ -199,6 +211,7 @@ export default function Emergency() {
   };
 
   const cancelEmergencyWorkflow = () => {
+    cancelSOSCountdown();
     setCountdownActive(false);
     setWorkflowStatus("Cancelled");
     setWorkflowMessage("Emergency protocol cancelled. Safe status restored.");
@@ -208,18 +221,20 @@ export default function Emergency() {
     startEmergencyWorkflow(alertType, message, "SOS");
   };
 
-  const triggerSensorWorkflow = (source, message) => {
-    startEmergencyWorkflow("sensor_sos", message, source);
+  const resolveAlert = async () => {
+    await resolveActiveSOSAlert();
+    setActiveAlert(null);
+    setWorkflowStatus("Standby");
   };
 
-  const resolveAlert = async () => {
-    if (activeAlert) {
-      await SOSAlert.update(activeAlert.id, { 
-        status: 'resolved',
-        resolved_at: new Date().toISOString()
-      });
-      setActiveAlert(null);
-    }
+  const handleNavigateToPolice = () => {
+    if (!nearestPoliceStation?.latitude || !nearestPoliceStation?.longitude) return;
+    navigate(`/safenavigation?destLat=${nearestPoliceStation.latitude}&destLon=${nearestPoliceStation.longitude}&destLabel=${encodeURIComponent(nearestPoliceStation.name)}`);
+  };
+
+  const handleNavigateToHospital = () => {
+    if (!nearestHospital?.latitude || !nearestHospital?.longitude) return;
+    navigate(`/safenavigation?destLat=${nearestHospital.latitude}&destLon=${nearestHospital.longitude}&destLabel=${encodeURIComponent(nearestHospital.name)}`);
   };
 
   return (
@@ -324,7 +339,7 @@ export default function Emergency() {
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   {/* Police Station */}
-                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 space-y-1">
+                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 space-y-2">
                     <div className="text-[10px] font-black text-blue-900 uppercase tracking-wider">
                       Nearest Police Assistance
                     </div>
@@ -332,7 +347,14 @@ export default function Emergency() {
                       <>
                         <div className="font-black text-slate-900 line-clamp-1">{nearestPoliceStation.name}</div>
                         <div className="text-[10px] text-blue-900 font-extrabold">{nearestPoliceStation.formattedDistance}</div>
-                        <div className="flex items-center gap-1 pt-1">
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-blue-100">
+                          <button
+                            type="button"
+                            onClick={handleNavigateToPolice}
+                            className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded-md flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                          >
+                            <Navigation className="w-2.5 h-2.5" /> Navigate
+                          </button>
                           <a
                             href={nearestPoliceStation.mapUrl}
                             target="_blank"
@@ -341,13 +363,15 @@ export default function Emergency() {
                           >
                             <ExternalLink className="w-2.5 h-2.5" /> View Map
                           </a>
-                          {nearestPoliceStation.phone && (
+                          {nearestPoliceStation.phone ? (
                             <a
                               href={`tel:${nearestPoliceStation.phone}`}
-                              className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 underline flex items-center gap-0.5 ml-2"
+                              className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 underline flex items-center gap-0.5"
                             >
                               <Phone className="w-2.5 h-2.5" /> Call
                             </a>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 font-medium italic">Phone unavailable</span>
                           )}
                         </div>
                       </>
@@ -357,7 +381,7 @@ export default function Emergency() {
                   </div>
 
                   {/* Hospital */}
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1">
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
                     <div className="text-[10px] font-black text-rose-900 uppercase tracking-wider">
                       Nearest Medical Facility
                     </div>
@@ -365,7 +389,14 @@ export default function Emergency() {
                       <>
                         <div className="font-black text-slate-900 line-clamp-1">{nearestHospital.name}</div>
                         <div className="text-[10px] text-rose-900 font-extrabold">{nearestHospital.formattedDistance}</div>
-                        <div className="flex items-center gap-1 pt-1">
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-100">
+                          <button
+                            type="button"
+                            onClick={handleNavigateToHospital}
+                            className="text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 px-2 py-1 rounded-md flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                          >
+                            <Navigation className="w-2.5 h-2.5" /> Navigate
+                          </button>
                           <a
                             href={nearestHospital.mapUrl}
                             target="_blank"
@@ -374,13 +405,15 @@ export default function Emergency() {
                           >
                             <ExternalLink className="w-2.5 h-2.5" /> View Map
                           </a>
-                          {nearestHospital.phone && (
+                          {nearestHospital.phone ? (
                             <a
                               href={`tel:${nearestHospital.phone}`}
-                              className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 underline flex items-center gap-0.5 ml-2"
+                              className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 underline flex items-center gap-0.5"
                             >
                               <Phone className="w-2.5 h-2.5" /> Call
                             </a>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 font-medium italic">Phone unavailable</span>
                           )}
                         </div>
                       </>

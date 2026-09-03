@@ -1,5 +1,8 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import { exec } from "child_process";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -9,7 +12,8 @@ import { sendEmergencyEmail } from "./services/emailService.js";
 dotenv.config({ override: true });
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ limit: "15mb", extended: true }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -385,6 +389,81 @@ app.post("/api/sos/call", async (req, res) => {
   } catch (err) {
     console.error("[Twilio Direct Call] Error:", err.message);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/predict-voice — PyTorch Voice ML Inference Endpoint
+// ─────────────────────────────────────────────────────────────
+app.post("/api/predict-voice", async (req, res) => {
+  try {
+    const audioData = req.body?.audio || req.body?.audioData || req.body?.base64;
+
+    if (!audioData) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing audio data in request payload."
+      });
+    }
+
+    // Strip Base64 data URL header if present
+    const base64Clean = audioData.replace(/^data:audio\/\w+;base64,/, "").replace(/^data:application\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Clean, "base64");
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or empty audio buffer."
+      });
+    }
+
+    // Write temp input file
+    const scratchDir = path.join(__dirname, "scratch");
+    if (!fs.existsSync(scratchDir)) {
+      fs.mkdirSync(scratchDir, { recursive: true });
+    }
+
+    const tempFileName = `temp_voice_${crypto.randomBytes(6).toString("hex")}.webm`;
+    const tempFilePath = path.join(scratchDir, tempFileName);
+    fs.writeFileSync(tempFilePath, buffer);
+
+    // Root directory containing convert_and_predict.py
+    const rootDir = path.resolve(__dirname, "..");
+    const pythonScript = path.join(rootDir, "convert_and_predict.py");
+
+    const cmd = `python "${pythonScript}" --audio_path "${tempFilePath}"`;
+
+    exec(cmd, { cwd: rootDir, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      // Clean up input temp file immediately
+      if (fs.existsSync(tempFilePath)) {
+        try { fs.unlinkSync(tempFilePath); } catch {}
+      }
+
+      if (error) {
+        console.error("[Voice ML API Error]:", stderr || error.message);
+        return res.status(500).json({
+          success: false,
+          error: "Voice prediction failed during audio conversion or model execution."
+        });
+      }
+
+      try {
+        const result = JSON.parse(stdout.trim());
+        return res.json(result);
+      } catch (parseErr) {
+        console.error("[Voice ML Output Parse Error]:", stdout);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to parse voice prediction output."
+        });
+      }
+    });
+  } catch (err) {
+    console.error("[Voice ML Route Exception]:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Internal server error during voice processing."
+    });
   }
 });
 
